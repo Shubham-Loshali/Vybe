@@ -21,6 +21,7 @@ class ShufflePlayButton extends StatelessWidget {
         await audioHandler.addPlaylistToQueue(
           shuffledSongs,
           replace: true,
+          startIndex: 0,
           shuffle: true,
         );
       },

@@ -213,6 +213,7 @@ class _UserSongsPageState extends State<UserSongsPage> {
                       await audioHandler.addPlaylistToQueue(
                         List<Map>.from(songs.whereType<Map>()),
                         replace: true,
+                        startIndex: 0,
                         shuffle: true,
                       );
                     },

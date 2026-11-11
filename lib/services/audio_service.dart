@@ -1092,6 +1092,7 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
       int? targetQueueIndex;
       Map? startSong;
       final newSongs = <Map>[];
+      final effectiveStartIndex = replace ? (startIndex ?? 0) : startIndex;
       final appendedStartQueueIndex = !replace && startIndex != null
           ? appendedQueueIndexForSourceIndex(
               songs,
@@ -1106,7 +1107,7 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
           final queueSong = _queueEntryIds.createSong(song);
           if (replace) {
             newSongs.add(queueSong);
-            if (startIndex == i) startSong = queueSong;
+            if (effectiveStartIndex == i) startSong = queueSong;
           } else {
             _queueList.add(queueSong);
           }
@@ -1117,9 +1118,10 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
         if (shuffleAfterReplace && newSongs.isNotEmpty) {
           _originalQueueList.addAll(cloneMaps(newSongs));
           _rebuildOriginalQueueEntryIndex();
-          newSongs
-            ..remove(startSong)
-            ..shuffle();
+          if (startSong != null) {
+            newSongs.remove(startSong);
+          }
+          newSongs.shuffle();
           _queueList
             ..addAll(startSong != null ? [startSong] : <Map>[])
             ..addAll(newSongs);
@@ -1128,6 +1130,9 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
           _queueList.addAll(newSongs);
           if (startSong != null) {
             targetQueueIndex = _queueList.indexOf(startSong);
+          }
+          if (targetQueueIndex == null || targetQueueIndex < 0) {
+            targetQueueIndex = _queueList.isNotEmpty ? 0 : null;
           }
         }
       }
@@ -1380,6 +1385,14 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
     _currentLoadingIndex = index;
     _currentLoadingTransitionId = currentTransitionId;
     _queuePlayWhenReady = playWhenReady;
+
+    // Immediately pause any active playback so old audio does not keep playing
+    // while the new track's stream URL is being resolved and prepared.
+    try {
+      if (audioPlayer.playing) {
+        unawaited(audioPlayer.pause());
+      }
+    } catch (_) {}
 
     try {
       final previousQueueIndex = _currentQueueIndex;

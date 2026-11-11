@@ -502,11 +502,11 @@ class _SongBarState extends State<SongBar> {
       return;
     }
 
-    if (widget.clearPlaylist) {
-      audioHandler.addPlaylistToQueue([widget.song], replace: true);
-    } else {
-      audioHandler.playSong(widget.song);
-    }
+    audioHandler.addPlaylistToQueue(
+      [widget.song],
+      replace: true,
+      startIndex: 0,
+    );
   }
 
   Widget _buildAlbumArt(ColorScheme colorScheme) {

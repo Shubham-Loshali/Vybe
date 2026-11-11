@@ -324,6 +324,7 @@ class _PlaylistPageState extends State<PlaylistPage> {
               await audioHandler.addPlaylistToQueue(
                 List<Map>.from(songs.whereType<Map>()),
                 replace: true,
+                startIndex: 0,
                 shuffle: true,
               );
             },
