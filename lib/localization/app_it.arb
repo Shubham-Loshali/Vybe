@@ -1,0 +1,456 @@
+{
+  "about": "Info",
+  "accentChangeMsg": "Colore principale cambiato con successo",
+  "accentColor": "Colore principale",
+  "add": "Aggiungi",
+  "addPlaylist": "Aggiungi playlist",
+  "addToLikedPlaylists": "Aggiungi alle playlist preferite",
+  "addToLikedSongs": "Aggiungi ai brani preferiti",
+  "addToPlaylist": "Aggiungi alla playlist",
+  "addToQueue": "Aggiungi in coda",
+  "addedPlaylists": "Scalette aggiunte",
+  "addedSuccess": "Aggiunto con successo",
+  "addedToLikedSongs": "Aggiunto a brani che ti piacciono",
+  "album": "Album",
+  "albums": "Albums",
+  "allSongs": "Tutte le canzoni",
+  "alreadyDownloading": "Già in download",
+  "annualRecap": "Ricapitalizzazione annuale",
+  "appUpdateIsAvailable": "Aggiornamento app disponibile",
+  "artist": "Artista",
+  "artistNotFound": "Artista non trovato. Controlla i log o riprova.",
+  "artists": "Artisti",
+  "audioQuality": "Qualità audio",
+  "audioQualityBadge": "Mostra distintivo di qualità di audio",
+  "audioQualityBadgeDescription": "Mostra un piccolo badge bitrate/codec sull'arte che sta giocando.",
+  "audioQualityHigh": "Alta",
+  "audioQualityLow": "Bassa",
+  "audioQualityMedium": "Media",
+  "audioQualityMsg": "Qualità audio cambiata con successo",
+  "automaticSongPicker": "Suggerimento automatico brani",
+  "automaticSongPickerDescription": "Riproduci automaticamente un brano casuale al termine della traccia corrente.",
+  "automaticUpdateChecks": "Controlli automatici di aggiornamento",
+  "automaticUpdateChecksDescription": "Controlla automaticamente la presenza di aggiornamenti delle app all'avvio.",
+  "back": "Indietro",
+  "backToFavorites": "Torna ai preferiti",
+  "backedupSuccess": "Dati salvati con successo",
+  "backupError": "Errore durante il salvataggio dei dati",
+  "backupUserData": "Backup dati utente",
+  "becomeSponsor": "Diventa uno sponsor",
+  "cacheMsg": "Cache pulita con successo",
+  "cancel": "Annulla",
+  "cancellingDownload": "Annullamento scaricamento...",
+  "checkForUpdates": "Controlla aggiornamenti?",
+  "chooseBackupDir": "Scegli directory di backup",
+  "chooseBackupFiles": "Scegli file di backup",
+  "chooseCsvFile": "Scegli file CSV",
+  "clear": "Pulisci",
+  "clearCache": "Pulisci cache",
+  "clearListeningStats": "Cancella statistiche di ascolto",
+  "clearListeningStatsQuestion": "Questo eliminerà le statistiche di ascolto Time Machine memorizzate su questo dispositivo. Continuare?",
+  "clearQueue": "Elimina coda",
+  "clearQueueQuestion": "Sei sicuro di voler svuotare la coda?",
+  "clearRecentlyPlayed": "Cancella cronologia recenti",
+  "clearRecentlyPlayedQuestion": "Cancellare cronologia recenti?",
+  "clearSearchHistory": "Cancella cronologia ricerche",
+  "clearSearchHistoryQuestion": "Cancellare cronologia ricerche?",
+  "confirm": "Conferma",
+  "confirmation": "Conferma",
+  "copy": "Copia",
+  "copyLogs": "Copia log",
+  "copyLogsNoLogs": "Nessun log trovato da copiare",
+  "copyLogsSuccess": "Log copiati con successo",
+  "create": "Crea",
+  "createFolder": "Crea cartella",
+  "custom": "Personalizza",
+  "customPlaylistImgUrl": "Link immagine playlist personalizzata",
+  "customPlaylistName": "Nome playlist personalizzata",
+  "customPlaylists": "Playlist personalizzate",
+  "dateAdded": "Data Aggiunta",
+  "default_": "Predefinito",
+  "delete": "Elimina",
+  "deleteDownloads": "Elimina download",
+  "deleteDownloadsQuestion": "Sei sicuro di voler eliminare tutti i download?",
+  "deleteFolder": "Elimina cartella",
+  "deleteFolderQuestion": "Sei sicuro di voler eliminare questa cartella? Le scalette all'interno saranno spostate nella libreria principale.",
+  "deletePlaylist": "Cancella playlist",
+  "download": "Scarica",
+  "downloadAppUpdate": "Scarica aggiornamento app",
+  "downloadCancelled": "Download annullato",
+  "downloadFailed": "Download non riuscito",
+  "downloadPlaylist": "Scarica playlist",
+  "downloadsDeleted": "Download eliminati con successo",
+  "dynamicColor": "Colore dinamico (Android 12+)",
+  "dynamicColorDescription": "Utilizzare i colori accento dal vostro tema di sistema Android.",
+  "editFolder": "Modifica cartella",
+  "editPlaylist": "Modifica playlist",
+  "emptyFolderMsg": "Questa cartella è vuota. Aggiungi playlist per organizzare la tua musica.",
+  "enableUpdateChecksDescription": "Vuoi che Vybe controlli automaticamente gli aggiornamenti dalle versioni di GitHub? Puoi sempre controllare manualmente gli aggiornamenti dalle impostazioni",
+  "endOfSong": "Fine del brano",
+  "enterFolderName": "Inserisci un nome per la cartella",
+  "enterPlaylistName": "Inserisci il nome della playlist",
+  "equalizer": "Equalizzatore",
+  "equalizerAndroidOnly": "Equalizzatore disponibile solo su Android.",
+  "equalizerBands": "Bande",
+  "equalizerDisabledHint": "Le regolazioni delle bande sono disattivate.",
+  "equalizerEnable": "Abilita equalizzatore",
+  "equalizerEnabledHint": "Le regolazioni delle bande sono attive.",
+  "equalizerInitFailed": "L'equalizzatore non può essere inizializzato ora. Prova a suonare una canzone e riapri questa pagina.",
+  "equalizerPresetBalanced": "Equilibrato",
+  "equalizerPresetBassBoost": "Potenziamento dei bassi",
+  "equalizerPresetElectronic": "Elettronica",
+  "equalizerPresetPop": "Pop",
+  "equalizerPresetRock": "Rock",
+  "equalizerPresetTrebleBoost": "Esalta gli alti",
+  "equalizerPresetVocal": "Voce",
+  "equalizerPresets": "Profili",
+  "equalizerResetBands": "Reimposta bande",
+  "error": "Qualcosa è andato storto",
+  "externalRecommendations": "Raccomandazioni esterne",
+  "externalRecommendationsDescription": "Usa l'algoritmo esterno per i suggerimenti invece di quello di Vybe.",
+  "failedPlayingRadio": "Riproduzione della stazione radio non riuscita",
+  "failedToLoadPlaylist": "Errore caricamento playlist",
+  "fieldsNotEmpty": "Tutti i campi devono essere riempiti",
+  "folderAlreadyExists": "Esiste già una cartella con questo nome",
+  "folderDeleted": "Cartella eliminata correttamente",
+  "folderName": "Nome cartella",
+  "folderUpdated": "Cartella aggiornata con successo",
+  "goToArtist": "Vai all'artista",
+  "home": "Home",
+  "hours": "Ore",
+  "imagePicked": "Immagine selezionata",
+  "importPlaylist": "Importa playlist",
+  "importSpotifyPlaylist": "Importa playlist da Spotify",
+  "importSpotifyPlaylistInstructions": "Esporta la tua playlist Spotify come CSV su chosic.com/spotify-playlist-exporter/, quindi scegli il file o incolla il contenuto qui sotto. Vybe cercherà YouTube per ogni canzone.",
+  "importSpotifyPlaylistTitle": "Importa playlist di Spotify",
+  "invalidYouTubePlaylist": "Playlist YouTube non valida",
+  "language": "Lingua",
+  "languageDe": "Tedesco",
+  "languageEl": "Greco",
+  "languageEn": "Inglese",
+  "languageEs": "Spagnolo",
+  "languageEt": "Estone",
+  "languageFr": "Francese",
+  "languageHe": "Ebraico",
+  "languageHi": "Hindi",
+  "languageHu": "Ungherese",
+  "languageId": "Indonesiano",
+  "languageIt": "Italiano",
+  "languageJa": "Giapponese",
+  "languageKo": "Coreano",
+  "languageMsg": "Lingua cambiata con successo",
+  "languagePl": "Polacco",
+  "languagePt": "Portoghese",
+  "languageRu": "Russo",
+  "languageSv": "Svedese",
+  "languageTa": "Tamil",
+  "languageTr": "Turco",
+  "languageUk": "Ucraino",
+  "languageZh": "Cinese (semplificato)",
+  "languageZhHant": "Cinese (tradizionale)",
+  "library": "Libreria",
+  "licenses": "Licenze",
+  "likedPlaylists": "Playlist preferite",
+  "likedSongs": "Brani preferiti",
+  "linkCopied": "Link della playlist copiato negli appunti",
+  "listeningStats": "Statistiche di ascolto",
+  "listeningStatsCleared": "Statistiche di ascolto eliminate",
+  "listeningStatsDescription": "Traccia le statistiche di ascolto locale per ricapitoli mensili e annuali.",
+  "loading": "Caricamento",
+  "lyrics": "Testi",
+  "lyricsNotAvailable": "Testi non disponibili",
+  "makeOffline": "Rendi disponibile offline",
+  "minutes": "Minuti",
+  "minutesListened": "minuti ascoltati",
+  "monthlyListeners": "ascoltatori mensili",
+  "moreOptions": "Più opzioni",
+  "mostPlayed": "Più riprodotti",
+  "moveToFolder": "Sposta nella cartella",
+  "name": "Nome",
+  "newAnnouncement": "Nuovo annuncio pubblicato",
+  "newFolder": "Nuova cartella",
+  "no": "No",
+  "noCustomPlaylists": "Non hai ancora creato playlist personalizzate",
+  "noFolders": "Nessuna cartella creata ancora",
+  "noListeningStats": "Ancora nessuna statistica di ascolto",
+  "noOfflineLibraryContent": "Nessun contenuto offline. Abilita modalità online oppure scarica playlist/brani per usare la libreria offline.",
+  "noPlaylistsAdded": "Nessuna scaletta ancora aggiunta",
+  "noRadioStations": "Nessuna stazione radio disponibile",
+  "noSongsInPlaylist": "Nessuna canzone nella playlist",
+  "noSongsInQueue": "Nessun brano in coda",
+  "notYTlist": "Questo non è un ID playlist di YouTube valido",
+  "offlineMode": "Modalità offline",
+  "offlineModeDescription": "Disabilita le funzioni online e utlizza Vybe completamente offline.",
+  "offlinePlaylists": "Scalette offline",
+  "offlineSongs": "Brani offline",
+  "openChosicExporter": "Open Chosic Spotify esportatore",
+  "others": "Altri",
+  "pasteCsv": "Incolla CSV",
+  "pause": "Pausa",
+  "pickImageFromDevice": "Scegli immagine dal dispositivo",
+  "pinToLibrary": "Aggiungi alla libreria",
+  "pinnedPlaylists": "Fissato",
+  "pinnedPlaylistsLimit": "Puoi aggiungere fino a 5 playlist o album",
+  "play": "Riproduci",
+  "playNext": "Riproduci successivo",
+  "playlist": "Playlist",
+  "playlistAlreadyDownloaded": "Playlist già scaricata",
+  "playlistAlreadyExists": "Playlist già esistente",
+  "playlistDownloaded": "Playlist scaricata",
+  "playlistEmpty": "La scaletta è vuota",
+  "playlistFolders": "Cartelle playlist",
+  "playlistName": "Titolo playlist",
+  "playlistRemovedFromOffline": "Playlist rimossa dalla memoria fuori rete",
+  "playlistUpdated": "Playlist aggiornata con successo",
+  "playlists": "Playlist",
+  "preferences": "Preferenze",
+  "provideIdOrNameError": "Per favore fornisci un ID YouTube o un nome di playlist personalizzata",
+  "pureBlackTheme": "Tema nero puro",
+  "pureBlackThemeDescription": "Utilizzare un vero sfondo nero in modalità scura per i display OLED.",
+  "queue": "Coda",
+  "radioStations": "Stazioni radio",
+  "recentlyPlayed": "Recentemente riprodotti",
+  "recentlyPlayedMsg": "Cronologia recenti cancellata",
+  "recommendedForYou": "Raccomandato per te",
+  "recommendedSongs": "Canzoni raccomandati",
+  "remove": "Rimuovi",
+  "removeFromFolder": "Rimuovi dalla cartella",
+  "removeFromLikedPlaylists": "Rimuovi dalle playlist aggiunte ai preferiti",
+  "removeFromLikedSongs": "Rimuovi dai brani aggiunti ai preferiti",
+  "removeFromPlaylist": "Rimuovi dalla playlist",
+  "removeFromRecentlyPlayed": "Rimuovi da riprodotti di recente",
+  "removeOffline": "Rimuovi dai brani disponibili offline",
+  "removeOfflinePlaylist": "Rimuovi Scaletta Offline",
+  "removeOfflinePlaylistConfirm": "Questo rimuoverà la scaletta dalla memoria offline. I brani che vengono utilizzati in altre scalette saranno ancora disponibili.",
+  "removePlaylistQuestion": "Rimuovere questa playlist?",
+  "removeSearchQueryQuestion": "Rimuovere questa ricerca?",
+  "removedFromLikedSongs": "Rimosso da brani che ti piacciono",
+  "renameSong": "Rinomina brano",
+  "repeat": "Ripeti",
+  "replay": "Riascolta",
+  "restoreError": "Errore durante il ripristino dei dati",
+  "restoreUserData": "Ripristina dati utente",
+  "restoredSuccess": "Dati ripristinati con successo",
+  "search": "Cerca",
+  "searchHistoryMsg": "Cronologia ricerche cancellata",
+  "selectDuration": "Seleziona durata",
+  "setTimer": "Imposta timer",
+  "settingChangedMsg": "Impostazioni cambiate",
+  "settings": "Impostazioni",
+  "share": "Condividi",
+  "shareRecap": "Condividi riepilogo",
+  "shareTimeMachineText": "Mi Vybe riepilogo",
+  "shuffle": "Riproduzione casuale",
+  "single": "Singolo",
+  "singlesAndEps": "Singoli ed EP",
+  "skipToNext": "Salta alla successiva",
+  "skipToPrevious": "Torna alla precedente",
+  "sleepTimer": "Timer di spegnimento",
+  "sleepTimerCancelled": "Timer di sospensione annullato",
+  "sleepTimerSet": "Timer di spegnimento impostato",
+  "songAdded": "Brano aggiunto con successo",
+  "songAddedToOffline": "Il brano è ora disponibile offline",
+  "songAlreadyInPlaylist": "Il brano è già contenuto nella playlist",
+  "songInfoCopied": "Informazioni canzone copiate",
+  "songRemoved": "Brano rimosso con successo",
+  "songRemovedFromOffline": "Il brano non è più disponibile offline",
+  "songs": "Brani",
+  "sponsorBlockDescription": "Skip sponsored segments in supported tracks.",
+  "sponsorProject": "Sosteni il progetto",
+  "spotifyCsvHint": "Incolla qui il contenuto CSV",
+  "spotifyPlaylistAlreadyImporting": "Un'importazione è già in corso",
+  "spotifyPlaylistEmpty": "Scegliere prima un file CSV o incollare un contenuto CSV",
+  "spotifyPlaylistImportFailed": "Importazione della playlist non riuscita",
+  "spotifyPlaylistImportResult": "{found} di {total} canzoni importati",
+  "spotifyPlaylistImporting": "Importazione della playlist...",
+  "spotifyPlaylistInvalid": "Il CSV non contiene colonne di brano e artista",
+  "spotifyPlaylistMissingSongs": "Brani non trovati",
+  "spotifyPlaylistNameHint": "Playlist Spotify importata",
+  "spotifyPlaylistProgress": "Ricerca di {done} di {total}",
+  "suggestedArtists": "Artisti suggeriti",
+  "suggestedPlaylists": "Playlist suggerite",
+  "syncAllNow": "Sync now",
+  "syncAllNowDescription": "{count, plural, =1{With the paired device that is online} other{With the {count} paired devices online}}",
+  "syncNow": "Sync",
+  "syncOnline": "{address} · Online",
+  "syncSyncedAll": "Synced with your devices",
+  "syncThisDevice": "This device",
+  "syncTitle": "Local sync",
+  "syncData": "Choose what to sync",
+  "syncSelections": "Only categories selected on both devices are exchanged. Settings and downloaded files stay on each device.",
+  "syncFavourites": "Liked songs",
+  "syncPlaylists": "Playlists, folders and pins",
+  "syncRecent": "Recently played",
+  "syncRecap": "Listening recap",
+  "syncSearches": "Search history",
+  "syncRadio": "Liked radio stations",
+  "syncPairTitle": "Pair with this device?",
+  "syncPinInstructions": "Enter the six-digit PIN shown on the other device.",
+  "syncPairDescription": "{device} wants to pair. Type this PIN there; cancel if you did not start it.",
+  "syncUnchanged": "No selected data changed.",
+  "syncOverNetwork": "Sync over local network",
+  "syncOffDescription": "Sync your library and listening recap between your devices over Wi-Fi. No account or cloud server.",
+  "syncDevices": "Devices",
+  "syncFindDevices": "Find devices on this network and pair them.",
+  "syncLastSynced": "Last sync: {time}",
+  "syncAutomatic": "Automatic sync",
+  "syncAutomaticDescription": "With paired devices that are online: at startup, shortly after a change and every 30 minutes.",
+  "syncCouldNotStart": "Could not start local sync",
+  "syncIsOff": "Turn on local sync to make this device visible to your other Vybe devices on the same network.",
+  "syncVisible": "This device is visible to other Vybe devices on the same network.",
+  "syncNotVisible": "Not visible right now. Local sync could not start.",
+  "syncScanAgain": "Scan again",
+  "syncScanning": "Looking for devices on your network...",
+  "syncConnecting": "Connecting...",
+  "syncPreparing": "Preparing your library...",
+  "syncSending": "Sending it to the other device...",
+  "syncMerging": "Merging what came back...",
+  "syncSyncingWith": "Syncing with {device}",
+  "syncSyncedWith": "Synced with {device}",
+  "syncPairWith": "Pair with {device}",
+  "syncPairedWith": "Paired with {device}",
+  "syncPair": "Pair",
+  "syncDone": "Done",
+  "syncOfflineDevice": "Offline",
+  "syncNoDevices": "No other Vybe device found. Turn on local sync on the other device and make sure both are on the same Wi-Fi.",
+  "syncForget": "Forget",
+  "syncForgetConfirm": "Forget {device}? You will need to pair again with a PIN before syncing with it.",
+  "syncForgetAll": "Forget all devices",
+  "syncForgetAllConfirm": "Forget every paired device? Each one will ask for a PIN again.",
+  "syncErrorNotRunning": "Turn on local sync on this device first.",
+  "syncErrorIncorrectPin": "Incorrect PIN. Check the code shown on {device}.",
+  "syncErrorRejected": "{device} rejected the pairing.",
+  "syncErrorBusy": "{device} is busy with another pairing attempt. Wait a few seconds and try again.",
+  "syncErrorUntrusted": "{device} no longer trusts this device. Forget it in the device list, then pair again.",
+  "syncErrorUpdate": "Update Vybe on both devices to use local sync.",
+  "syncErrorNoCategories": "Select at least one category that is enabled on both devices.",
+  "syncErrorTooLarge": "The selected data is too large. Choose fewer categories.",
+  "syncErrorUnreachable": "Could not reach {device}. Your data is safe; make sure both devices are on the same network.",
+  "syncErrorFailed": "Sync with {device} failed. Try again.",
+  "@syncAllNowDescription": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "@syncOnline": {
+    "placeholders": {
+      "address": {
+        "type": "String"
+      }
+    }
+  },
+  "@syncPairDescription": {
+    "placeholders": {
+      "device": {
+        "type": "String"
+      }
+    }
+  },
+  "@syncLastSynced": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "@syncSyncingWith": {
+    "placeholders": {
+      "device": {
+        "type": "String"
+      }
+    }
+  },
+  "@syncSyncedWith": {
+    "placeholders": {
+      "device": {
+        "type": "String"
+      }
+    }
+  },
+  "@syncPairWith": {
+    "placeholders": {
+      "device": {
+        "type": "String"
+      }
+    }
+  },
+  "@syncPairedWith": {
+    "placeholders": {
+      "device": {
+        "type": "String"
+      }
+    }
+  },
+  "@syncForgetConfirm": {
+    "placeholders": {
+      "device": {
+        "type": "String"
+      }
+    }
+  },
+  "@syncErrorIncorrectPin": {
+    "placeholders": {
+      "device": {
+        "type": "String"
+      }
+    }
+  },
+  "@syncErrorRejected": {
+    "placeholders": {
+      "device": {
+        "type": "String"
+      }
+    }
+  },
+  "@syncErrorBusy": {
+    "placeholders": {
+      "device": {
+        "type": "String"
+      }
+    }
+  },
+  "@syncErrorUntrusted": {
+    "placeholders": {
+      "device": {
+        "type": "String"
+      }
+    }
+  },
+  "@syncErrorUnreachable": {
+    "placeholders": {
+      "device": {
+        "type": "String"
+      }
+    }
+  },
+  "@syncErrorFailed": {
+    "placeholders": {
+      "device": {
+        "type": "String"
+      }
+    }
+  },
+  "syncedLyrics": "Synced lyrics",
+  "syncedLyricsDescription": "Highlight the current line and scroll along with the song when timed lyrics are available.",
+  "tapToView": "Premi per vedere",
+  "themeMode": "Modalità tema",
+  "themeModeDark": "Scuro",
+  "themeModeLight": "Chiaro",
+  "themeModeSystem": "Sistema",
+  "timeMachine": "Time Macchine",
+  "tools": "Strumenti",
+  "topSongs": "Brani più venduti",
+  "translate": "Translate",
+  "translateDescription": "Help translate Vybe into your language on Crowdin.",
+  "understand": "Capisco",
+  "undo": "Annulla",
+  "unpinFromLibrary": "Sblocca dalla libreria",
+  "update": "Aggiorna",
+  "useProxy": "Usa proxy",
+  "useProxyDescription": "Usa il proxy solo per eventuali errori di streaming, se non necessario potrebbe interrompere la riproduzione.",
+  "userPlaylists": "Playlist utente",
+  "yes": "Sì",
+  "youtubePlaylistLinkOrId": "YouTube playlist link o ID"
+}

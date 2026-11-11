@@ -1,0 +1,410 @@
+import 'dart:async';
+
+import 'package:app_links/app_links.dart';
+import 'package:audio_service/audio_service.dart';
+import 'package:dynamic_color/dynamic_color.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/scheduler.dart';
+import 'package:flutter/services.dart';
+import 'package:hive_ce_flutter/hive_flutter.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:vybe/extensions/l10n.dart';
+import 'package:vybe/localization/app_localizations.dart';
+import 'package:vybe/screens/local_sync_page.dart';
+import 'package:vybe/services/audio_service.dart';
+import 'package:vybe/services/data_manager.dart';
+import 'package:vybe/services/io_service.dart';
+import 'package:vybe/services/listening_stats_service.dart';
+import 'package:vybe/services/local_sync_service.dart';
+import 'package:vybe/services/logger_service.dart';
+import 'package:vybe/services/playlist_sharing.dart';
+import 'package:vybe/services/playlists_manager.dart';
+import 'package:vybe/services/router_service.dart';
+import 'package:vybe/services/settings_manager.dart';
+import 'package:vybe/services/update_manager.dart';
+import 'package:vybe/theme/app_themes.dart';
+import 'package:vybe/utilities/flutter_toast.dart';
+import 'package:vybe/utilities/language_utils.dart';
+import 'package:vybe/utilities/platform_utils.dart';
+import 'package:vybe/utilities/playlist_utils.dart';
+import 'package:vybe/utilities/sharing_intent.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:receive_sharing_intent/receive_sharing_intent.dart';
+
+late VybeAudioHandler audioHandler;
+StreamSubscription<String?>? sharingIntentSubscription;
+StreamSubscription<Uri?>? appLinksSubscription;
+
+final logger = Logger();
+final appLinks = AppLinks();
+
+bool isFdroidBuild = false;
+bool isUpdateChecked = false;
+
+class Vybe extends StatefulWidget {
+  const Vybe({super.key});
+
+  static Future<void> updateAppState(
+    BuildContext context, {
+    ThemeMode? newThemeMode,
+    Locale? newLocale,
+    Color? newAccentColor,
+    bool? useSystemColor,
+  }) async {
+    context.findAncestorStateOfType<_VybeState>()!.changeSettings(
+      newThemeMode: newThemeMode,
+      newLocale: newLocale,
+      newAccentColor: newAccentColor,
+      systemColorStatus: useSystemColor,
+    );
+  }
+
+  @override
+  _VybeState createState() => _VybeState();
+}
+
+class _VybeState extends State<Vybe> with WidgetsBindingObserver {
+  void changeSettings({
+    ThemeMode? newThemeMode,
+    Locale? newLocale,
+    Color? newAccentColor,
+    bool? systemColorStatus,
+  }) {
+    setState(() {
+      if (newThemeMode != null) {
+        themeMode = newThemeMode;
+        brightness = getBrightnessFromThemeMode(newThemeMode);
+      }
+      if (newLocale != null) {
+        languageSetting = newLocale;
+      }
+      if (newAccentColor != null) {
+        if (systemColorStatus != null &&
+            useSystemColor.value != systemColorStatus) {
+          useSystemColor.value = systemColorStatus;
+          addOrUpdateData<bool>(
+            'settings',
+            'useSystemColor',
+            systemColorStatus,
+          );
+        }
+        primaryColorSetting = newAccentColor;
+      }
+    });
+  }
+
+  @override
+  void initState() {
+    super.initState();
+
+    WidgetsBinding.instance.addObserver(this);
+
+    if (isMobilePlatform) {
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    }
+
+    final platformDispatcher = PlatformDispatcher.instance;
+
+    // This callback is called every time the brightness changes.
+    platformDispatcher.onPlatformBrightnessChanged = () {
+      if (themeMode == ThemeMode.system) {
+        setState(() {
+          brightness = platformDispatcher.platformBrightness;
+        });
+      }
+    };
+
+    offlineMode.addListener(_onOfflineModeChanged);
+    LocalSyncService.instance.incomingPairingRequest.addListener(
+      showIncomingPairingDialog,
+    );
+
+    if (isMobilePlatform) {
+      sharingIntentSubscription = ReceiveSharingIntent.getTextStream().listen(
+        (String? value) async {
+          await consumeYoutubeSharedTextIntent(
+            value,
+            audioHandler: audioHandler,
+            onError: (error, stackTrace) {
+              logger.log(
+                'Error while playing shared song:',
+                error: error,
+                stackTrace: stackTrace,
+              );
+            },
+          );
+        },
+        onError: (err) {
+          logger.log('getTextStream error:', error: err);
+        },
+      );
+    }
+
+    try {
+      LicenseRegistry.addLicense(() async* {
+        final license = await rootBundle.loadString(
+          'assets/licenses/paytone.txt',
+        );
+        yield LicenseEntryWithLineBreaks(['paytoneOne'], license);
+      });
+    } catch (e, stackTrace) {
+      logger.log(
+        'License Registration Error',
+        error: e,
+        stackTrace: stackTrace,
+      );
+    }
+
+    if (!isFdroidBuild && isMobilePlatform) {
+      if (shouldWeCheckUpdates.value == true) {
+        if (!isUpdateChecked && kReleaseMode) {
+          SchedulerBinding.instance.addPostFrameCallback((_) {
+            if (!offlineMode.value) {
+              checkAppUpdates();
+            }
+            isUpdateChecked = true;
+          });
+        }
+      } else {
+        if (shouldWeCheckUpdates.value == null) {
+          // show dialog that asks user if they want to enable update checks
+          SchedulerBinding.instance.addPostFrameCallback((_) {
+            showUpdateCheckDialog(NavigationManager().context);
+          });
+        } else {
+          SchedulerBinding.instance.addPostFrameCallback((_) async {
+            if (!offlineMode.value) {
+              await fetchAnnouncementOnly();
+            }
+          });
+        }
+      }
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(LocalSyncService.instance.syncOnResume());
+    }
+    super.didChangeAppLifecycleState(state);
+    // Persist listening stats when the app leaves the foreground. This is the
+    // reliable moment to snapshot and flush: unlike widget dispose, these
+    // callbacks are delivered before the OS suspends or terminates the process.
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.detached) {
+      listeningStatsService.recordListeningSessionProgress(
+        wasPlaying: audioHandler.audioPlayer.playing,
+      );
+      unawaited(listeningStatsService.flush());
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    offlineMode.removeListener(_onOfflineModeChanged);
+    PlatformDispatcher.instance.onPlatformBrightnessChanged = null;
+
+    LocalSyncService.instance.incomingPairingRequest.removeListener(
+      showIncomingPairingDialog,
+    );
+    unawaited(LocalSyncService.instance.dispose());
+    Hive.close();
+    unawaited(sharingIntentSubscription?.cancel());
+    unawaited(appLinksSubscription?.cancel());
+    super.dispose();
+  }
+
+  void _onOfflineModeChanged() {
+    // Force rebuild when offline mode changes
+    setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return DynamicColorBuilder(
+      builder: (lightColorScheme, darkColorScheme) {
+        final colorScheme = getAppColorScheme(
+          lightColorScheme,
+          darkColorScheme,
+        );
+
+        return AnnotatedRegion<SystemUiOverlayStyle>(
+          value: SystemUiOverlayStyle(
+            statusBarColor: Colors.transparent,
+            systemNavigationBarColor: Colors.transparent,
+            systemNavigationBarContrastEnforced: true,
+            statusBarBrightness: brightness == Brightness.dark
+                ? Brightness.light
+                : Brightness.dark,
+            statusBarIconBrightness: brightness == Brightness.dark
+                ? Brightness.light
+                : Brightness.dark,
+            systemNavigationBarIconBrightness: brightness == Brightness.dark
+                ? Brightness.light
+                : Brightness.dark,
+          ),
+          child: MaterialApp.router(
+            themeMode: themeMode,
+            darkTheme: getAppTheme(colorScheme),
+            theme: getAppTheme(colorScheme),
+            localizationsDelegates: [
+              AppLocalizations.delegate,
+              ...GlobalMaterialLocalizations.delegates,
+            ],
+            supportedLocales: appSupportedLocales,
+            locale: languageSetting,
+            routerConfig: NavigationManager.router,
+          ),
+        );
+      },
+    );
+  }
+}
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await initialisation();
+
+  runApp(const Vybe());
+}
+
+Future<void> initialisation() async {
+  try {
+    await Hive.initFlutter();
+
+    await Future.wait([
+      Hive.openBox('settings'),
+      Hive.openBox('user'),
+      Hive.openBox('userNoBackup'),
+      Hive.openBox('cache'),
+    ]);
+
+    // Nothing else removes cache entries nobody asks for again.
+    unawaited(cleanupOldCacheEntries());
+
+    try {
+      await LocalSyncService.instance.initialise();
+    } catch (e, stackTrace) {
+      logger.log(
+        'Local sync could not start',
+        error: e,
+        stackTrace: stackTrace,
+      );
+    }
+
+    if (isMobilePlatform) {
+      audioHandler = await AudioService.init(
+        builder: VybeAudioHandler.new,
+        config: const AudioServiceConfig(
+          androidNotificationChannelId: 'com.vybe.music',
+          androidNotificationChannelName: 'Vybe',
+          androidNotificationIcon: 'drawable/ic_launcher_foreground',
+          androidShowNotificationBadge: true,
+          androidStopForegroundOnPause: false,
+          // Handed to Android Auto on the browsable root. Without the search
+          // flag the car never offers a search box, and without the content
+          // style keys it falls back to an undifferentiated list of everything.
+          androidBrowsableRootExtras: {
+            AndroidContentStyle.supportedKey: true,
+            AndroidContentStyle.browsableHintKey:
+                AndroidContentStyle.gridItemHintValue,
+            AndroidContentStyle.playableHintKey:
+                AndroidContentStyle.listItemHintValue,
+            'android.media.browse.SEARCH_SUPPORTED': true,
+          },
+        ),
+      );
+    }
+
+    // Init router
+    NavigationManager.instance;
+
+    try {
+      // Listen to incoming links while app is running
+      appLinksSubscription = appLinks.uriLinkStream.listen(
+        handleIncomingLink,
+        onError: (err) {
+          logger.log('URI link error:', error: err);
+        },
+      );
+    } on PlatformException {
+      logger.log('Failed to get initial uri');
+    }
+
+    if (isFdroidBuild && !offlineMode.value) {
+      await fetchAnnouncementOnly();
+    }
+  } catch (e, stackTrace) {
+    logger.log('Initialization Error', error: e, stackTrace: stackTrace);
+  }
+
+  applicationDirPath = (await getApplicationDocumentsDirectory()).path;
+  await FilePaths.ensureDirectoriesExist();
+}
+
+void handleIncomingLink(Uri? uri) async {
+  if (uri == null || uri.scheme != 'vybe' || uri.host != 'playlist') return;
+
+  if (uri.pathSegments.length < 2 || uri.pathSegments[0] != 'custom') return;
+
+  try {
+    final encodedPlaylist = uri.pathSegments[1];
+    final playlist = await PlaylistSharingService.decodeAndExpandPlaylist(
+      encodedPlaylist,
+    );
+
+    if (playlist == null) {
+      _showPlaylistError();
+      return;
+    }
+
+    // Ensure the incoming playlist has a unique id so it can be removed later
+    if (playlist['ytid'] == null || playlist['ytid'].toString().isEmpty) {
+      playlist['ytid'] = PlaylistUtils.generateCustomPlaylistId();
+    }
+
+    // Check for duplicate by title and song ytids
+    final incomingYtids = (playlist['list'] as List<dynamic>)
+        .map((s) => s['ytid'].toString())
+        .toList();
+
+    final isDuplicate = PlaylistUtils.playlistExists(
+      playlist,
+      incomingYtids,
+      userCustomPlaylists.value,
+    );
+
+    if (isDuplicate) {
+      showToast(
+        NavigationManager().context,
+        NavigationManager().context.l10n!.playlistAlreadyExists,
+      );
+    } else {
+      userCustomPlaylists.value = [...userCustomPlaylists.value, playlist];
+      unawaited(
+        addOrUpdateData<List>(
+          'user',
+          'customPlaylists',
+          userCustomPlaylists.value,
+        ),
+      );
+      showToast(
+        NavigationManager().context,
+        '${NavigationManager().context.l10n!.addedSuccess}!',
+      );
+    }
+  } catch (e) {
+    _showPlaylistError();
+  }
+}
+
+void _showPlaylistError() {
+  showToast(
+    NavigationManager().context,
+    NavigationManager().context.l10n!.failedToLoadPlaylist,
+  );
+}

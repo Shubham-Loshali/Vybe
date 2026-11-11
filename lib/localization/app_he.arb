@@ -1,0 +1,456 @@
+{
+  "about": "אודות האפליקציה",
+  "accentChangeMsg": "צבע ההדגשה עודכן בהצלחה",
+  "accentColor": "צבע הדגשה",
+  "add": "הוסף",
+  "addPlaylist": "הוסף פלייליסט",
+  "addToLikedPlaylists": "הוסף לפלייליסטים שאהבתי",
+  "addToLikedSongs": "הוסף לשירים שאהבתי",
+  "addToPlaylist": "הוסף לפלייליסט",
+  "addToQueue": "הוסף לתור",
+  "addedPlaylists": "פלייליסטים שנוספו",
+  "addedSuccess": "נוסף בהצלחה",
+  "addedToLikedSongs": "נוסף לשירים שאהבתי",
+  "album": "אלבום",
+  "albums": "אלבומים",
+  "allSongs": "All songs",
+  "alreadyDownloading": "כבר מתבצעת הורדה",
+  "annualRecap": "סיכום שנתי",
+  "appUpdateIsAvailable": "עדכון אפליקציה זמין",
+  "artist": "אמן",
+  "artistNotFound": "Artist not found. Check logs or try again.",
+  "artists": "אמנים",
+  "audioQuality": "איכות שמע",
+  "audioQualityBadge": "Show audio quality badge",
+  "audioQualityBadgeDescription": "Display a small bitrate/codec badge on the now playing artwork.",
+  "audioQualityHigh": "גבוהה",
+  "audioQualityLow": "נמוכה",
+  "audioQualityMedium": "בינונית",
+  "audioQualityMsg": "איכות השמע עודכנה",
+  "automaticSongPicker": "בחירת שירים אוטומטית",
+  "automaticSongPickerDescription": "הפעל אוטומטית שיר אקראי לאחר סיום השיר הנוכחי.",
+  "automaticUpdateChecks": "בדיקת עדכונים אוטומטית",
+  "automaticUpdateChecksDescription": "בדוק עדכוני אפליקציה באופן אוטומטי בעת ההפעלה.",
+  "back": "חזור",
+  "backToFavorites": "חזור למועדפים",
+  "backedupSuccess": "הנתונים גובו בהצלחה",
+  "backupError": "אירעה שגיאה בעת גיבוי הנתונים",
+  "backupUserData": "גבה נתוני משתמש",
+  "becomeSponsor": "הפוך לתומך",
+  "cacheMsg": "המטמון נוקה",
+  "cancel": "ביטול",
+  "cancellingDownload": "מבטל הורדה...",
+  "checkForUpdates": "לבדוק עדכונים?",
+  "chooseBackupDir": "בחר תיקיית גיבוי",
+  "chooseBackupFiles": "בחר קבצים לגיבוי",
+  "chooseCsvFile": "Choose CSV file",
+  "clear": "נקה",
+  "clearCache": "נקה מטמון",
+  "clearListeningStats": "נקה נתוני האזנה",
+  "clearListeningStatsQuestion": "פעולה זו תמחק את נתוני ההאזנה של Time Machine השמורים במכשיר זה. להמשיך?",
+  "clearQueue": "נקה תור",
+  "clearQueueQuestion": "האם אתה בטוח שברצונך לנקות את התור?",
+  "clearRecentlyPlayed": "נקה היסטוריית השמעה אחרונה",
+  "clearRecentlyPlayedQuestion": "האם אתה בטוח שברצונך למחוק את היסטוריית ההשמעה האחרונה?",
+  "clearSearchHistory": "נקה היסטוריית חיפוש",
+  "clearSearchHistoryQuestion": "האם אתה בטוח שברצונך למחוק את היסטוריית החיפוש?",
+  "confirm": "אישור",
+  "confirmation": "אישור",
+  "copy": "Copy",
+  "copyLogs": "העתק יומנים",
+  "copyLogsNoLogs": "אין יומנים להעתקה",
+  "copyLogsSuccess": "היומנים הועתקו בהצלחה",
+  "create": "צור",
+  "createFolder": "צור תיקייה",
+  "custom": "מותאם אישית",
+  "customPlaylistImgUrl": "כתובת תמונה מותאמת אישית לפלייליסט",
+  "customPlaylistName": "שם פלייליסט מותאם אישית",
+  "customPlaylists": "פלייליסטים מותאמים אישית",
+  "dateAdded": "תאריך הוספה",
+  "default_": "ברירת מחדל",
+  "delete": "מחק",
+  "deleteDownloads": "מחק הורדות",
+  "deleteDownloadsQuestion": "האם אתה בטוח שברצונך למחוק את כל ההורדות?",
+  "deleteFolder": "מחק תיקייה",
+  "deleteFolderQuestion": "האם אתה בטוח שברצונך למחוק תיקייה זו? הפלייליסטים שבתוכה יועברו לספרייה הראשית.",
+  "deletePlaylist": "מחק פלייליסט",
+  "download": "הורד",
+  "downloadAppUpdate": "הורד עדכון אפליקציה",
+  "downloadCancelled": "ההורדה בוטלה",
+  "downloadFailed": "ההורדה נכשלה",
+  "downloadPlaylist": "הורד פלייליסט",
+  "downloadsDeleted": "ההורדות נמחקו בהצלחה",
+  "dynamicColor": "צבע הדגשה דינמי (Android 12+)",
+  "dynamicColorDescription": "Use the accent colors from your Android system theme.",
+  "editFolder": "ערוך תיקייה",
+  "editPlaylist": "ערוך פלייליסט",
+  "emptyFolderMsg": "תיקייה זו ריקה. הוסף פלייליסטים כדי לארגן את המוזיקה שלך.",
+  "enableUpdateChecksDescription": "האם תרצה ש-Vybe תבדוק עדכונים אוטומטית מגרסאות GitHub? תמיד ניתן לבדוק עדכונים באופן ידני דרך ההגדרות.",
+  "endOfSong": "סוף השיר",
+  "enterFolderName": "הזן שם תיקייה",
+  "enterPlaylistName": "Please enter a playlist name",
+  "equalizer": "אקולייזר",
+  "equalizerAndroidOnly": "האקולייזר זמין רק באנדרואיד.",
+  "equalizerBands": "רצועות",
+  "equalizerDisabledHint": "שינויי הגבר הרצועות מושבתים.",
+  "equalizerEnable": "הפעל אקולייזר",
+  "equalizerEnabledHint": "שינויי הגבר הרצועות פעילים.",
+  "equalizerInitFailed": "לא ניתן לאתחל את האקולייזר כעת. נסה להפעיל שיר ולפתוח מחדש את הדף.",
+  "equalizerPresetBalanced": "מאוזן",
+  "equalizerPresetBassBoost": "הגברת בס",
+  "equalizerPresetElectronic": "אלקטרוני",
+  "equalizerPresetPop": "פופ",
+  "equalizerPresetRock": "רוק",
+  "equalizerPresetTrebleBoost": "הגברת צלילים גבוהים",
+  "equalizerPresetVocal": "קולי",
+  "equalizerPresets": "הגדרות קבועות מראש",
+  "equalizerResetBands": "אפס רצועות",
+  "error": "אירעה שגיאה. בדוק את היומנים או נסה שוב.",
+  "externalRecommendations": "המלצות חיצוניות",
+  "externalRecommendationsDescription": "השתמש באלגוריתם חיצוני להמלצות במקום באלגוריתם של Vybe.",
+  "failedPlayingRadio": "הפעלת תחנת הרדיו נכשלה",
+  "failedToLoadPlaylist": "טעינת הפלייליסט נכשלה",
+  "fieldsNotEmpty": "יש למלא את כל השדות",
+  "folderAlreadyExists": "תיקייה בשם זה כבר קיימת",
+  "folderDeleted": "התיקייה נמחקה בהצלחה",
+  "folderName": "שם התיקייה",
+  "folderUpdated": "התיקייה עודכנה בהצלחה",
+  "goToArtist": "עבור לאמן",
+  "home": "בית",
+  "hours": "שעות",
+  "imagePicked": "התמונה נבחרה",
+  "importPlaylist": "Import playlist",
+  "importSpotifyPlaylist": "Import playlist from Spotify",
+  "importSpotifyPlaylistInstructions": "Export your Spotify playlist as CSV at chosic.com/spotify-playlist-exporter/, then choose the file or paste its contents below. Vybe will search YouTube for each song.",
+  "importSpotifyPlaylistTitle": "Import Spotify playlist",
+  "invalidYouTubePlaylist": "פלייליסט YouTube לא חוקי",
+  "language": "שפה",
+  "languageDe": "גרמנית",
+  "languageEl": "יוונית",
+  "languageEn": "אנגלית",
+  "languageEs": "ספרדית",
+  "languageEt": "אסטונית",
+  "languageFr": "צרפתית",
+  "languageHe": "עברית",
+  "languageHi": "הינדי",
+  "languageHu": "הונגרית",
+  "languageId": "אינדונזית",
+  "languageIt": "איטלקית",
+  "languageJa": "יפנית",
+  "languageKo": "קוריאנית",
+  "languageMsg": "השפה עודכנה בהצלחה",
+  "languagePl": "פולנית",
+  "languagePt": "פורטוגזית",
+  "languageRu": "רוסית",
+  "languageSv": "שוודית",
+  "languageTa": "טמילית",
+  "languageTr": "טורקית",
+  "languageUk": "אוקראינית",
+  "languageZh": "סינית (מפושטת)",
+  "languageZhHant": "סינית (מסורתית)",
+  "library": "ספרייה",
+  "licenses": "רישיונות",
+  "likedPlaylists": "פלייליסטים שאהבתי",
+  "likedSongs": "שירים שאהבתי",
+  "linkCopied": "קישור הפלייליסט הועתק ללוח",
+  "listeningStats": "נתוני האזנה",
+  "listeningStatsCleared": "נתוני ההאזנה נוקו",
+  "listeningStatsDescription": "עקוב אחר נתוני האזנה מקומיים לסיכומים חודשיים ושנתיים.",
+  "loading": "טוען",
+  "lyrics": "מילים",
+  "lyricsNotAvailable": "המילים אינן זמינות",
+  "makeOffline": "הפוך לזמין במצב לא מקוון",
+  "minutes": "דקות",
+  "minutesListened": "דקות האזנה",
+  "monthlyListeners": "monthly listeners",
+  "moreOptions": "אפשרויות נוספות",
+  "mostPlayed": "המושמעים ביותר",
+  "moveToFolder": "העבר לתיקייה",
+  "name": "שם",
+  "newAnnouncement": "הודעה חדשה פורסמה",
+  "newFolder": "תיקייה חדשה",
+  "no": "לא",
+  "noCustomPlaylists": "עדיין לא נוצרו פלייליסטים מותאמים אישית",
+  "noFolders": "עדיין לא נוצרו תיקיות",
+  "noListeningStats": "אין עדיין נתוני האזנה",
+  "noOfflineLibraryContent": "אין תוכן לא מקוון. הפעל מצב מקוון או הורד פלייליסטים/שירים כדי להשתמש בספרייה.",
+  "noPlaylistsAdded": "עדיין לא נוספו פלייליסטים",
+  "noRadioStations": "אין תחנות רדיו זמינות",
+  "noSongsInPlaylist": "אין שירים בפלייליסט",
+  "noSongsInQueue": "אין שירים בתור",
+  "notYTlist": "מזהה פלייליסט YouTube לא חוקי",
+  "offlineMode": "מצב לא מקוון",
+  "offlineModeDescription": "השבת תכונות מקוונות והשתמש ב-Vybe באופן מלא במצב לא מקוון.",
+  "offlinePlaylists": "פלייליסטים לא מקוונים",
+  "offlineSongs": "שירים לא מקוונים",
+  "openChosicExporter": "Open Chosic Spotify exporter",
+  "others": "אחרים",
+  "pasteCsv": "Paste CSV",
+  "pause": "השהה",
+  "pickImageFromDevice": "בחר תמונה מהמכשיר",
+  "pinToLibrary": "הצמד לספרייה",
+  "pinnedPlaylists": "מוצמדים",
+  "pinnedPlaylistsLimit": "ניתן להצמיד עד 5 פלייליסטים או אלבומים",
+  "play": "נגן",
+  "playNext": "נגן הבא",
+  "playlist": "פלייליסט",
+  "playlistAlreadyDownloaded": "הפלייליסט כבר הורד",
+  "playlistAlreadyExists": "הפלייליסט כבר קיים",
+  "playlistDownloaded": "הפלייליסט הורד",
+  "playlistEmpty": "הפלייליסט ריק",
+  "playlistFolders": "תיקיות פלייליסטים",
+  "playlistName": "Playlist name",
+  "playlistRemovedFromOffline": "הפלייליסט הוסר מהמצב הלא מקוון",
+  "playlistUpdated": "הפלייליסט עודכן בהצלחה",
+  "playlists": "פלייליסטים",
+  "preferences": "העדפות",
+  "provideIdOrNameError": "אנא הזן מזהה YouTube או שם פלייליסט מותאם אישית",
+  "pureBlackTheme": "ערכת נושא שחורה מלאה",
+  "pureBlackThemeDescription": "Use a true black background in dark mode for OLED displays.",
+  "queue": "תור",
+  "radioStations": "תחנות רדיו",
+  "recentlyPlayed": "נוגן לאחרונה",
+  "recentlyPlayedMsg": "היסטוריית ההשמעה האחרונה נוקתה",
+  "recommendedForYou": "מומלץ עבורך",
+  "recommendedSongs": "Recommended songs",
+  "remove": "הסר",
+  "removeFromFolder": "הסר מהתיקייה",
+  "removeFromLikedPlaylists": "הסר מפלייליסטים שאהבתי",
+  "removeFromLikedSongs": "הסר משירים שאהבתי",
+  "removeFromPlaylist": "הסר מהפלייליסט",
+  "removeFromRecentlyPlayed": "הסר מהנוגנו לאחרונה",
+  "removeOffline": "הסר ממצב לא מקוון",
+  "removeOfflinePlaylist": "הסר פלייליסט לא מקוון",
+  "removeOfflinePlaylistConfirm": "פעולה זו תסיר את הפלייליסט מהמצב הלא מקוון. שירים המשמשים בפלייליסטים אחרים יישארו זמינים.",
+  "removePlaylistQuestion": "האם אתה בטוח שברצונך להסיר את הפלייליסט הזה?",
+  "removeSearchQueryQuestion": "האם אתה בטוח שברצונך להסיר את שאילתת החיפוש הזו?",
+  "removedFromLikedSongs": "הוסר משירים שאהבתי",
+  "renameSong": "שנה שם שיר",
+  "repeat": "חזרה",
+  "replay": "נגן שוב",
+  "restoreError": "אירעה שגיאה בעת שחזור הנתונים",
+  "restoreUserData": "שחזר נתוני משתמש",
+  "restoredSuccess": "הנתונים שוחזרו בהצלחה",
+  "search": "חיפוש",
+  "searchHistoryMsg": "היסטוריית החיפוש נוקתה",
+  "selectDuration": "בחר משך זמן",
+  "setTimer": "הגדר טיימר",
+  "settingChangedMsg": "ההגדרות עודכנו בהצלחה",
+  "settings": "הגדרות",
+  "share": "שתף",
+  "shareRecap": "שתף סיכום",
+  "shareTimeMachineText": "סיכום Vybe שלי",
+  "shuffle": "ערבוב",
+  "single": "Single",
+  "singlesAndEps": "Singles & EPs",
+  "skipToNext": "דלג לבא",
+  "skipToPrevious": "דלג לקודם",
+  "sleepTimer": "טיימר שינה",
+  "sleepTimerCancelled": "טיימר השינה בוטל",
+  "sleepTimerSet": "טיימר השינה הוגדר",
+  "songAdded": "השיר נוסף",
+  "songAddedToOffline": "השיר זמין כעת במצב לא מקוון",
+  "songAlreadyInPlaylist": "השיר כבר נמצא בפלייליסט",
+  "songInfoCopied": "Song info copied to clipboard",
+  "songRemoved": "השיר הוסר",
+  "songRemovedFromOffline": "השיר אינו זמין יותר במצב לא מקוון",
+  "songs": "שירים",
+  "sponsorBlockDescription": "דלג על קטעים ממומנים בשירים נתמכים.",
+  "sponsorProject": "תמוך בפרויקט",
+  "spotifyCsvHint": "Paste CSV content here",
+  "spotifyPlaylistAlreadyImporting": "An import is already in progress",
+  "spotifyPlaylistEmpty": "Choose a CSV file or paste CSV content first",
+  "spotifyPlaylistImportFailed": "Playlist import failed",
+  "spotifyPlaylistImportResult": "{found} of {total} songs imported",
+  "spotifyPlaylistImporting": "Importing playlist...",
+  "spotifyPlaylistInvalid": "The CSV does not contain Song and Artist columns",
+  "spotifyPlaylistMissingSongs": "Songs not found",
+  "spotifyPlaylistNameHint": "Imported Spotify playlist",
+  "spotifyPlaylistProgress": "Searching {done} of {total}",
+  "suggestedArtists": "אמנים מומלצים",
+  "suggestedPlaylists": "פלייליסטים מומלצים",
+  "syncAllNow": "Sync now",
+  "syncAllNowDescription": "{count, plural, =1{With the paired device that is online} other{With the {count} paired devices online}}",
+  "syncNow": "Sync",
+  "syncOnline": "{address} · Online",
+  "syncSyncedAll": "Synced with your devices",
+  "syncThisDevice": "This device",
+  "syncTitle": "Local sync",
+  "syncData": "Choose what to sync",
+  "syncSelections": "Only categories selected on both devices are exchanged. Settings and downloaded files stay on each device.",
+  "syncFavourites": "Liked songs",
+  "syncPlaylists": "Playlists, folders and pins",
+  "syncRecent": "Recently played",
+  "syncRecap": "Listening recap",
+  "syncSearches": "Search history",
+  "syncRadio": "Liked radio stations",
+  "syncPairTitle": "Pair with this device?",
+  "syncPinInstructions": "Enter the six-digit PIN shown on the other device.",
+  "syncPairDescription": "{device} wants to pair. Type this PIN there; cancel if you did not start it.",
+  "syncUnchanged": "No selected data changed.",
+  "syncOverNetwork": "Sync over local network",
+  "syncOffDescription": "Sync your library and listening recap between your devices over Wi-Fi. No account or cloud server.",
+  "syncDevices": "Devices",
+  "syncFindDevices": "Find devices on this network and pair them.",
+  "syncLastSynced": "Last sync: {time}",
+  "syncAutomatic": "Automatic sync",
+  "syncAutomaticDescription": "With paired devices that are online: at startup, shortly after a change and every 30 minutes.",
+  "syncCouldNotStart": "Could not start local sync",
+  "syncIsOff": "Turn on local sync to make this device visible to your other Vybe devices on the same network.",
+  "syncVisible": "This device is visible to other Vybe devices on the same network.",
+  "syncNotVisible": "Not visible right now. Local sync could not start.",
+  "syncScanAgain": "Scan again",
+  "syncScanning": "Looking for devices on your network...",
+  "syncConnecting": "Connecting...",
+  "syncPreparing": "Preparing your library...",
+  "syncSending": "Sending it to the other device...",
+  "syncMerging": "Merging what came back...",
+  "syncSyncingWith": "Syncing with {device}",
+  "syncSyncedWith": "Synced with {device}",
+  "syncPairWith": "Pair with {device}",
+  "syncPairedWith": "Paired with {device}",
+  "syncPair": "Pair",
+  "syncDone": "Done",
+  "syncOfflineDevice": "Offline",
+  "syncNoDevices": "No other Vybe device found. Turn on local sync on the other device and make sure both are on the same Wi-Fi.",
+  "syncForget": "Forget",
+  "syncForgetConfirm": "Forget {device}? You will need to pair again with a PIN before syncing with it.",
+  "syncForgetAll": "Forget all devices",
+  "syncForgetAllConfirm": "Forget every paired device? Each one will ask for a PIN again.",
+  "syncErrorNotRunning": "Turn on local sync on this device first.",
+  "syncErrorIncorrectPin": "Incorrect PIN. Check the code shown on {device}.",
+  "syncErrorRejected": "{device} rejected the pairing.",
+  "syncErrorBusy": "{device} is busy with another pairing attempt. Wait a few seconds and try again.",
+  "syncErrorUntrusted": "{device} no longer trusts this device. Forget it in the device list, then pair again.",
+  "syncErrorUpdate": "Update Vybe on both devices to use local sync.",
+  "syncErrorNoCategories": "Select at least one category that is enabled on both devices.",
+  "syncErrorTooLarge": "The selected data is too large. Choose fewer categories.",
+  "syncErrorUnreachable": "Could not reach {device}. Your data is safe; make sure both devices are on the same network.",
+  "syncErrorFailed": "Sync with {device} failed. Try again.",
+  "@syncAllNowDescription": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "@syncOnline": {
+    "placeholders": {
+      "address": {
+        "type": "String"
+      }
+    }
+  },
+  "@syncPairDescription": {
+    "placeholders": {
+      "device": {
+        "type": "String"
+      }
+    }
+  },
+  "@syncLastSynced": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "@syncSyncingWith": {
+    "placeholders": {
+      "device": {
+        "type": "String"
+      }
+    }
+  },
+  "@syncSyncedWith": {
+    "placeholders": {
+      "device": {
+        "type": "String"
+      }
+    }
+  },
+  "@syncPairWith": {
+    "placeholders": {
+      "device": {
+        "type": "String"
+      }
+    }
+  },
+  "@syncPairedWith": {
+    "placeholders": {
+      "device": {
+        "type": "String"
+      }
+    }
+  },
+  "@syncForgetConfirm": {
+    "placeholders": {
+      "device": {
+        "type": "String"
+      }
+    }
+  },
+  "@syncErrorIncorrectPin": {
+    "placeholders": {
+      "device": {
+        "type": "String"
+      }
+    }
+  },
+  "@syncErrorRejected": {
+    "placeholders": {
+      "device": {
+        "type": "String"
+      }
+    }
+  },
+  "@syncErrorBusy": {
+    "placeholders": {
+      "device": {
+        "type": "String"
+      }
+    }
+  },
+  "@syncErrorUntrusted": {
+    "placeholders": {
+      "device": {
+        "type": "String"
+      }
+    }
+  },
+  "@syncErrorUnreachable": {
+    "placeholders": {
+      "device": {
+        "type": "String"
+      }
+    }
+  },
+  "@syncErrorFailed": {
+    "placeholders": {
+      "device": {
+        "type": "String"
+      }
+    }
+  },
+  "syncedLyrics": "Synced lyrics",
+  "syncedLyricsDescription": "Highlight the current line and scroll along with the song when timed lyrics are available.",
+  "tapToView": "הקש לצפייה",
+  "themeMode": "מצב ערכת נושא",
+  "themeModeDark": "כהה",
+  "themeModeLight": "בהיר",
+  "themeModeSystem": "מערכת",
+  "timeMachine": "מכונת זמן",
+  "tools": "כלים",
+  "topSongs": "Top songs",
+  "translate": "תרגם",
+  "translateDescription": "עזור לתרגם את Vybe לשפה שלך ב-Crowdin.",
+  "understand": "הבנתי",
+  "undo": "בטל",
+  "unpinFromLibrary": "בטל הצמדה מהספרייה",
+  "update": "עדכן",
+  "useProxy": "השתמש בפרוקסי",
+  "useProxyDescription": "השתמש בפרוקסי רק כאשר ההזרמה נכשלת. שימוש מיותר עלול לפגוע בהפעלה.",
+  "userPlaylists": "פלייליסטים של משתמש",
+  "yes": "כן",
+  "youtubePlaylistLinkOrId": "קישור או מזהה של פלייליסט YouTube"
+}

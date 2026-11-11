@@ -1,0 +1,486 @@
+import 'dart:async';
+
+import 'package:hive_ce/hive_ce.dart';
+import 'package:just_audio/just_audio.dart';
+import 'package:vybe/main.dart' show logger;
+import 'package:vybe/services/data_manager.dart';
+import 'package:vybe/services/local_sync/sync_security.dart';
+import 'package:vybe/services/settings_manager.dart';
+import 'package:vybe/utilities/listening_stats_utils.dart';
+import 'package:vybe/utilities/map_utils.dart';
+
+final listeningStatsService = ListeningStatsService();
+
+class ListeningStatsService {
+  ListeningStatsService({DateTime Function()? now})
+    : _now = now ?? DateTime.now;
+
+  final DateTime Function() _now;
+  static const storageKey = 'wrappedListeningStats';
+
+  Map<String, dynamic>? _stats;
+  // Stats are accumulated in memory and only written to Hive at meaningful
+  // checkpoints (track change, pause, stop, app backgrounding) via [flush],
+  // instead of on a periodic timer. This keeps device I/O off the hot path
+  // during continuous playback.
+  bool _dirty = false;
+
+  /// Whether listening progress is still waiting to be written.
+  bool get hasPendingChanges => _dirty;
+  Duration _listeningTimeRemainder = Duration.zero;
+
+  // Playback-session bookkeeping stays here so the audio handler can focus on
+  // transport and lifecycle, not on stats-specific state transitions.
+  Map<String, dynamic>? _sessionSong;
+  String? _sessionSongId;
+  Duration? _sessionDuration;
+  Duration _sessionListened = Duration.zero;
+  DateTime? _sessionLastTick;
+  bool _sessionQualified = false;
+  bool _sessionLastAudioPlayerPlaying = false;
+
+  bool get hasStats {
+    final now = _now();
+    final stats = _readStats(now);
+    final history = stats['history'] as Map<String, dynamic>;
+    return hasDisplayableListeningStats(_asMap(stats['currentMonth'])) ||
+        history.values.any(
+          (month) => hasDisplayableListeningStats(_asMap(month)),
+        ) ||
+        (isListeningStatsAnnualWindow(now) &&
+            hasDisplayableAnnualListeningStats(stats, now));
+  }
+
+  bool get isAnnualRecapAvailable {
+    final now = _now();
+    if (!isListeningStatsAnnualWindow(now)) return false;
+
+    return hasDisplayableAnnualListeningStats(_readStats(now), now);
+  }
+
+  int get year => listeningStatsAnnualYear(_now());
+
+  int get yearTotalSeconds {
+    final now = _now();
+    return annualTotalSecondsFromStats(_readStats(now), now);
+  }
+
+  List<String> get availableMonthKeys {
+    final now = _now();
+    return visibleListeningStatsMonthKeys(_readStats(now), now);
+  }
+
+  Map<String, dynamic>? monthStats(String monthKey) {
+    final stats = _readStats();
+    Map<String, dynamic>? month;
+    if (monthKey == stats['currentMonthKey']?.toString()) {
+      month = _asMap(stats['currentMonth']);
+    } else {
+      final history = stats['history'] as Map<String, dynamic>;
+      month = _asMap(history[monthKey]);
+    }
+
+    return month;
+  }
+
+  List<Map<String, dynamic>> monthTopSongs(
+    String monthKey, {
+    int limit = wrappedMonthlyHistorySongsLimit,
+  }) {
+    final month = monthStats(monthKey);
+    return sortedListeningSongs(_asMap(month?['songs']), limit: limit);
+  }
+
+  List<Map<String, dynamic>> yearTopSongs({
+    int limit = wrappedAnnualSongsLimit,
+  }) {
+    final now = _now();
+    final months = annualListeningMonthsFromStats(_readStats(now), now);
+    return annualListeningSongsFromMonths(months, limit: limit);
+  }
+
+  void recordListeningTime(Duration listenedDuration, {DateTime? listenedAt}) {
+    if (!wrappedEnabled.value) return;
+    if (listenedDuration <= Duration.zero) return;
+
+    _listeningTimeRemainder += listenedDuration;
+    final wholeSeconds = _listeningTimeRemainder.inSeconds;
+    if (wholeSeconds <= 0) return;
+    _listeningTimeRemainder -= Duration(seconds: wholeSeconds);
+
+    final now = listenedAt ?? _now();
+    _stats = applyListeningTimeDelta(
+      _readStats(now),
+      listenedDuration: Duration(seconds: wholeSeconds),
+      listenedAt: now,
+    );
+    _markDirty();
+  }
+
+  void recordListening(
+    Map song,
+    Duration listenedDuration, {
+    bool incrementPlayCount = false,
+    bool countTotalSeconds = true,
+    DateTime? listenedAt,
+  }) {
+    if (!wrappedEnabled.value) return;
+
+    final now = listenedAt ?? _now();
+    _stats = applyListeningStatsDelta(
+      _readStats(now),
+      song: song,
+      listenedDuration: listenedDuration,
+      listenedAt: now,
+      incrementPlayCount: incrementPlayCount,
+      countTotalSeconds: countTotalSeconds,
+    );
+    if (incrementPlayCount || listenedDuration > Duration.zero) {
+      _markDirty();
+    }
+  }
+
+  void updateListeningSessionDuration(
+    String? currentSongYtid,
+    Duration duration,
+  ) {
+    if (_sessionSongId == currentSongYtid) {
+      _sessionDuration = duration;
+    }
+  }
+
+  void startListeningSession(
+    Map song, {
+    Duration? duration,
+    DateTime? startedAt,
+    bool isPlaying = true,
+  }) {
+    if (!wrappedEnabled.value) return;
+
+    final ytid = song['ytid']?.toString();
+    if (ytid == null || ytid.isEmpty) return;
+
+    _sessionSong = cloneMap(song);
+    _sessionSongId = ytid;
+    _sessionDuration = duration ?? _durationFromSong(song);
+    _sessionListened = Duration.zero;
+    _sessionQualified = false;
+    _sessionLastTick = startedAt ?? _now();
+    _sessionLastAudioPlayerPlaying = isPlaying;
+  }
+
+  void resumeListeningSession({Map? currentSong}) {
+    if (!wrappedEnabled.value) return;
+
+    final song = currentSong;
+    if (song == null) return;
+
+    final ytid = song['ytid']?.toString();
+    if (ytid == null || ytid.isEmpty) return;
+
+    if (_sessionSongId != ytid) {
+      finishListeningSession(countCurrentTick: true);
+      startListeningSession(song);
+      return;
+    }
+
+    _sessionLastTick = _now();
+    _sessionLastAudioPlayerPlaying = true;
+  }
+
+  void recordListeningSessionProgress({bool? wasPlaying}) {
+    final song = _sessionSong;
+    if (song == null) return;
+
+    final now = _now();
+    final lastTick = _sessionLastTick;
+    _sessionLastTick = now;
+    if (lastTick == null) return;
+
+    final shouldCount = _sessionLastAudioPlayerPlaying && (wasPlaying ?? true);
+    if (!shouldCount) return;
+
+    final listenedDuration = now.difference(lastTick);
+    if (listenedDuration <= Duration.zero) return;
+
+    if (!wrappedEnabled.value) {
+      return;
+    }
+
+    _sessionListened += listenedDuration;
+    recordListeningTime(listenedDuration, listenedAt: now);
+
+    if (!_sessionQualified) {
+      if (_sessionListened >= qualifiedPlaybackThreshold(_sessionDuration)) {
+        _sessionQualified = true;
+        recordListening(
+          song,
+          _sessionListened,
+          listenedAt: now,
+          incrementPlayCount: true,
+          countTotalSeconds: false,
+        );
+      }
+      return;
+    }
+
+    recordListening(
+      song,
+      listenedDuration,
+      listenedAt: now,
+      countTotalSeconds: false,
+    );
+  }
+
+  void handlePlayerStateForListeningStats(
+    PlayerState state, {
+    Map? currentSong,
+  }) {
+    // `playing` is the intent to play; it also stays true during buffering
+    // and after completion. Count only a ready output, not these silent gaps.
+    final playing =
+        state.playing && state.processingState == ProcessingState.ready;
+    if (playing == _sessionLastAudioPlayerPlaying) return;
+
+    if (playing) {
+      resumeListeningSession(currentSong: currentSong);
+    } else {
+      recordListeningSessionProgress(
+        wasPlaying: _sessionLastAudioPlayerPlaying,
+      );
+    }
+
+    _sessionLastAudioPlayerPlaying = playing;
+  }
+
+  void finishListeningSession({
+    bool countCurrentTick = false,
+    bool flushStats = true,
+    bool? wasPlaying,
+  }) {
+    if (_sessionSong == null) return;
+
+    if (countCurrentTick) {
+      recordListeningSessionProgress(wasPlaying: wasPlaying);
+    }
+
+    _sessionSong = null;
+    _sessionSongId = null;
+    _sessionDuration = null;
+    _sessionListened = Duration.zero;
+    _sessionLastTick = null;
+    _sessionQualified = false;
+    _sessionLastAudioPlayerPlaying = false;
+    if (flushStats) {
+      unawaited(
+        flush().catchError((error, stackTrace) {
+          logger.log(
+            'Error flushing listening stats',
+            error: error,
+            stackTrace: stackTrace,
+          );
+        }),
+      );
+    }
+  }
+
+  void startListeningSessionIfNeeded({
+    Map? currentSong,
+    bool isPlaying = false,
+  }) {
+    if (!wrappedEnabled.value || _sessionSong != null || !isPlaying) {
+      return;
+    }
+
+    final song = currentSong;
+    if (song != null) {
+      startListeningSession(song);
+    }
+  }
+
+  Duration? _durationFromSong(Map song) {
+    final duration = song['duration'];
+    if (duration is Duration) return duration;
+    if (duration is int) return Duration(seconds: duration);
+    if (duration is num) return Duration(seconds: duration.toInt());
+
+    final text = duration?.toString();
+    if (text == null || text.isEmpty) return null;
+
+    final numericSeconds = int.tryParse(text);
+    if (numericSeconds != null) return Duration(seconds: numericSeconds);
+
+    final parts = text.split(':').map(int.tryParse).toList();
+    if (parts.any((part) => part == null)) return null;
+    if (parts.length == 2) {
+      return Duration(minutes: parts[0]!, seconds: parts[1]!);
+    }
+    if (parts.length == 3) {
+      return Duration(hours: parts[0]!, minutes: parts[1]!, seconds: parts[2]!);
+    }
+
+    return null;
+  }
+
+  void reload() {
+    _dirty = false;
+    _listeningTimeRemainder = Duration.zero;
+    _stats = null;
+  }
+
+  Future<void> clearStats() async {
+    _dirty = false;
+    _listeningTimeRemainder = Duration.zero;
+    final now = _now();
+    final cleared = createEmptyListeningStats(
+      now.year,
+      currentMonthKey: listeningStatsMonthKey(now),
+    );
+    cleared['syncResetId'] = SyncSecurity.randomToken(16);
+    _stats = cleared;
+    await deleteData('user', storageKey);
+    // Persist the cleared map last so an in-flight checkpoint flush can't
+    // resurrect the deleted stats (skipped if a new recording replaced _stats).
+    if (identical(_stats, cleared)) {
+      await addOrUpdateData('user', storageKey, cleared);
+    }
+  }
+
+  Future<void> prepareForSync() async {
+    final raw = Hive.box('user').get(storageKey);
+    if (raw is Map &&
+        raw['schemaVersion'] != wrappedListeningStatsSchemaVersion) {
+      _readStats();
+    }
+    recordListeningSessionProgress();
+    await flush();
+  }
+
+  /// Writes pending stats to disk if anything changed since the last write.
+  /// Called at playback checkpoints and when the app is backgrounded/closed.
+  Future<void> flush() async {
+    await _persist();
+  }
+
+  Map<String, dynamic> _readStats([DateTime? now]) {
+    final currentDate = now ?? _now();
+    final cached = _stats;
+    if (cached != null) {
+      final previousMonthKey = cached['currentMonthKey']?.toString();
+      _stats = normalizeListeningStats(cached, currentDate);
+      if (previousMonthKey != _stats!['currentMonthKey']?.toString()) {
+        _markDirty();
+      }
+      return _stats!;
+    }
+
+    final raw = Hive.box('user').get(storageKey);
+    _stats = normalizeListeningStats(raw, currentDate);
+    if (_shouldPersistNormalizedStats(raw, _stats!)) {
+      _markDirty();
+    }
+    return _stats!;
+  }
+
+  void _markDirty() {
+    _dirty = true;
+  }
+
+  Future<void> _persist() async {
+    final stats = _stats;
+    if (stats == null || !_dirty) return;
+    try {
+      await addOrUpdateData('user', storageKey, stats);
+      // Clear the dirty flag only if no newer recording replaced _stats while
+      // this write was in flight, otherwise those changes would be lost.
+      if (identical(_stats, stats)) {
+        _dirty = false;
+      }
+    } catch (e, stackTrace) {
+      logger.log(
+        'Error persisting listening stats',
+        error: e,
+        stackTrace: stackTrace,
+      );
+      rethrow;
+    }
+  }
+
+  Map<String, dynamic>? _asMap(dynamic value) {
+    if (value is! Map) return null;
+    return Map<String, dynamic>.from(value);
+  }
+
+  bool _shouldPersistNormalizedStats(
+    dynamic raw,
+    Map<String, dynamic> normalized,
+  ) {
+    if (raw is! Map) return false;
+
+    if (raw['schemaVersion'] != wrappedListeningStatsSchemaVersion) {
+      return true;
+    }
+
+    if (raw.containsKey('months') ||
+        raw.containsKey('yearSongs') ||
+        raw.containsKey('yearTotalSeconds')) {
+      return true;
+    }
+
+    if (raw['currentMonthKey']?.toString() !=
+        normalized['currentMonthKey']?.toString()) {
+      return true;
+    }
+
+    if (_hasUnqualifiedSongs(raw['currentMonth'])) {
+      return true;
+    }
+
+    if (_songCount(raw['currentMonth']) > wrappedCurrentMonthSongsLimit) {
+      return true;
+    }
+
+    final rawHistory = _asMap(raw['history']) ?? const <String, dynamic>{};
+    final normalizedHistory =
+        _asMap(normalized['history']) ?? const <String, dynamic>{};
+
+    if (!_sameKeys(rawHistory, normalizedHistory)) return true;
+
+    if (rawHistory.values.any(_hasUnqualifiedSongs)) return true;
+
+    return rawHistory.values.any(
+      (month) => _songCount(month) > wrappedMonthlyHistorySongsLimit,
+    );
+  }
+
+  bool _sameKeys(Map<String, dynamic> a, Map<String, dynamic> b) {
+    if (a.length != b.length) return false;
+
+    for (final key in a.keys) {
+      if (!b.containsKey(key)) return false;
+    }
+
+    return true;
+  }
+
+  int _songCount(dynamic month) {
+    final monthMap = _asMap(month);
+    final songs = _asMap(monthMap?['songs']);
+    return songs?.length ?? 0;
+  }
+
+  bool _hasUnqualifiedSongs(dynamic month) {
+    final monthMap = _asMap(month);
+    final songs = _asMap(monthMap?['songs']);
+    if (songs == null) return false;
+
+    return songs.values.any((value) {
+      final song = _asMap(value);
+      if (song == null) return false;
+      final playCount = song['playCount'] is int
+          ? song['playCount'] as int
+          : int.tryParse(song['playCount']?.toString() ?? '') ?? 0;
+      return playCount <= 0;
+    });
+  }
+}

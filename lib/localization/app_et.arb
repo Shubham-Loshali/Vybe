@@ -1,0 +1,456 @@
+{
+  "about": "Rakendusest",
+  "accentChangeMsg": "Aktsentvärv värskendati edukalt",
+  "accentColor": "Aktsentvärv",
+  "add": "Lisa",
+  "addPlaylist": "Lisa esitusloend",
+  "addToLikedPlaylists": "Lisa lemmikesitusloenditesse",
+  "addToLikedSongs": "Lisa lemmiklugude hulka",
+  "addToPlaylist": "Lisa esitusloendisse",
+  "addToQueue": "Lisa järjekorda",
+  "addedPlaylists": "Lisatud esitusloendid",
+  "addedSuccess": "Edukalt lisatud",
+  "addedToLikedSongs": "Lisatud lemmiklugude hulka",
+  "album": "Album",
+  "albums": "Albumid",
+  "allSongs": "All songs",
+  "alreadyDownloading": "Juba allalaadimisel",
+  "annualRecap": "Aasta kokkuvõte",
+  "appUpdateIsAvailable": "Uuendus on saadaval",
+  "artist": "Artist",
+  "artistNotFound": "Artist not found. Check logs or try again.",
+  "artists": "Artistid",
+  "audioQuality": "Helikvaliteet",
+  "audioQualityBadge": "Show audio quality badge",
+  "audioQualityBadgeDescription": "Display a small bitrate/codec badge on the now playing artwork.",
+  "audioQualityHigh": "Kõrge",
+  "audioQualityLow": "Madal",
+  "audioQualityMedium": "Keskmine",
+  "audioQualityMsg": "Helikvaliteet uuendatud",
+  "automaticSongPicker": "Automaatne lugude valik",
+  "automaticSongPickerDescription": "Esita automaatselt juhuslik lugu pärast praeguse loo lõppu.",
+  "automaticUpdateChecks": "Automaatne uuenduste kontroll",
+  "automaticUpdateChecksDescription": "Kontrolli käivitamisel automaatselt rakenduse uuendusi.",
+  "back": "Tagasi",
+  "backToFavorites": "Tagasi lemmikute juurde",
+  "backedupSuccess": "Andmed edukalt varundatud",
+  "backupError": "Andmete varundamisel tekkis viga",
+  "backupUserData": "Varunda kasutajaandmed",
+  "becomeSponsor": "Hakka sponsoriks",
+  "cacheMsg": "Vahemälu tühjendatud",
+  "cancel": "Tühista",
+  "cancellingDownload": "Allalaadimise tühistamine...",
+  "checkForUpdates": "Kontrolli uuendusi?",
+  "chooseBackupDir": "Vali varunduskaust",
+  "chooseBackupFiles": "Vali varundatavad failid",
+  "chooseCsvFile": "Choose CSV file",
+  "clear": "Tühjenda",
+  "clearCache": "Tühjenda vahemälu",
+  "clearListeningStats": "Tühjenda kuulamisstatistika",
+  "clearListeningStatsQuestion": "See kustutab selles seadmes salvestatud Time Machine kuulamisstatistika. Kas jätkata?",
+  "clearQueue": "Tühjenda järjekord",
+  "clearQueueQuestion": "Kas olete kindel, et soovite järjekorra tühjendada?",
+  "clearRecentlyPlayed": "Tühjenda hiljuti esitatud lood",
+  "clearRecentlyPlayedQuestion": "Kas olete kindel, et soovite hiljuti esitatud lugude ajaloo tühjendada?",
+  "clearSearchHistory": "Tühjenda otsinguajalugu",
+  "clearSearchHistoryQuestion": "Kas olete kindel, et soovite otsinguajaloo tühjendada?",
+  "confirm": "Kinnita",
+  "confirmation": "Kinnitus",
+  "copy": "Copy",
+  "copyLogs": "Kopeeri logid",
+  "copyLogsNoLogs": "Pole logisid kopeerimiseks",
+  "copyLogsSuccess": "Logid edukalt kopeeritud",
+  "create": "Loo",
+  "createFolder": "Loo kaust",
+  "custom": "Kohandatud",
+  "customPlaylistImgUrl": "Kohandatud esitusloendi pildi URL",
+  "customPlaylistName": "Kohandatud esitusloendi nimi",
+  "customPlaylists": "Kohandatud esitusloendid",
+  "dateAdded": "Lisamise kuupäev",
+  "default_": "Vaikimisi",
+  "delete": "Kustuta",
+  "deleteDownloads": "Kustuta allalaadimised",
+  "deleteDownloadsQuestion": "Kas olete kindel, et soovite kõik allalaadimised kustutada?",
+  "deleteFolder": "Kustuta kaust",
+  "deleteFolderQuestion": "Kas olete kindel, et soovite selle kausta kustutada? Kaustas olevad esitusloendid liigutatakse põhiteeki.",
+  "deletePlaylist": "Kustuta esitusloend",
+  "download": "Laadi alla",
+  "downloadAppUpdate": "Laadi rakenduse uuendus alla",
+  "downloadCancelled": "Allalaadimine tühistatud",
+  "downloadFailed": "Allalaadimine ebaõnnestus",
+  "downloadPlaylist": "Laadi esitusloend alla",
+  "downloadsDeleted": "Allalaadimised edukalt kustutatud",
+  "dynamicColor": "Dünaamiline aktsentvärv (Android 12+)",
+  "dynamicColorDescription": "Use the accent colors from your Android system theme.",
+  "editFolder": "Muuda kausta",
+  "editPlaylist": "Muuda esitusloendit",
+  "emptyFolderMsg": "See kaust on tühi. Lisa esitusloendeid, et oma muusikat korraldada.",
+  "enableUpdateChecksDescription": "Kas soovid, et Vybe kontrolliks automaatselt uuendusi GitHubi väljalasetest? Uuendusi saab alati käsitsi kontrollida seadetest.",
+  "endOfSong": "Loo lõpp",
+  "enterFolderName": "Sisesta kausta nimi",
+  "enterPlaylistName": "Please enter a playlist name",
+  "equalizer": "Ekvalaiser",
+  "equalizerAndroidOnly": "Ekvalaiser on saadaval ainult Androidil.",
+  "equalizerBands": "Ribad",
+  "equalizerDisabledHint": "Ribade võimenduse muudatused on välja lülitatud.",
+  "equalizerEnable": "Luba ekvalaiser",
+  "equalizerEnabledHint": "Ribade võimenduse muudatused on aktiivsed.",
+  "equalizerInitFailed": "Ekvalaiserit ei õnnestunud praegu käivitada. Proovi lugu esitada ja ava see leht uuesti.",
+  "equalizerPresetBalanced": "Tasakaalustatud",
+  "equalizerPresetBassBoost": "Bassivõimendus",
+  "equalizerPresetElectronic": "Elektrooniline",
+  "equalizerPresetPop": "Pop",
+  "equalizerPresetRock": "Rock",
+  "equalizerPresetTrebleBoost": "Kõrgete toonide võimendus",
+  "equalizerPresetVocal": "Vokaal",
+  "equalizerPresets": "Eelseaded",
+  "equalizerResetBands": "Lähtesta ribad",
+  "error": "Tekkis viga. Kontrolli logisid või proovi uuesti.",
+  "externalRecommendations": "Välised soovitused",
+  "externalRecommendationsDescription": "Kasuta soovituste jaoks välist algoritmi Vybe enda algoritmi asemel.",
+  "failedPlayingRadio": "Raadiojaama esitamine ebaõnnestus",
+  "failedToLoadPlaylist": "Esitusloendi laadimine ebaõnnestus",
+  "fieldsNotEmpty": "Kõik väljad tuleb täita",
+  "folderAlreadyExists": "Sellise nimega kaust on juba olemas",
+  "folderDeleted": "Kaust edukalt kustutatud",
+  "folderName": "Kausta nimi",
+  "folderUpdated": "Kaust edukalt uuendatud",
+  "goToArtist": "Ava artist",
+  "home": "Avaleht",
+  "hours": "Tundi",
+  "imagePicked": "Pilt valitud",
+  "importPlaylist": "Import playlist",
+  "importSpotifyPlaylist": "Import playlist from Spotify",
+  "importSpotifyPlaylistInstructions": "Export your Spotify playlist as CSV at chosic.com/spotify-playlist-exporter/, then choose the file or paste its contents below. Vybe will search YouTube for each song.",
+  "importSpotifyPlaylistTitle": "Import Spotify playlist",
+  "invalidYouTubePlaylist": "Vigane YouTube'i esitusloend",
+  "language": "Keel",
+  "languageDe": "Saksa",
+  "languageEl": "Kreeka",
+  "languageEn": "Inglise",
+  "languageEs": "Hispaania",
+  "languageEt": "Eesti",
+  "languageFr": "Prantsuse",
+  "languageHe": "Heebrea",
+  "languageHi": "Hindi",
+  "languageHu": "Ungari",
+  "languageId": "Indoneesia",
+  "languageIt": "Itaalia",
+  "languageJa": "Jaapani",
+  "languageKo": "Korea",
+  "languageMsg": "Keel edukalt uuendatud",
+  "languagePl": "Poola",
+  "languagePt": "Portugali",
+  "languageRu": "Vene",
+  "languageSv": "Rootsi",
+  "languageTa": "Tamili",
+  "languageTr": "Türgi",
+  "languageUk": "Ukraina",
+  "languageZh": "Hiina (lihtsustatud)",
+  "languageZhHant": "Hiina (traditsiooniline)",
+  "library": "Muusikakogu",
+  "licenses": "Litsentsid",
+  "likedPlaylists": "Lemmikesitusloendid",
+  "likedSongs": "Lemmiklood",
+  "linkCopied": "Esitusloendi link kopeeritud lõikelauale",
+  "listeningStats": "Kuulamisstatistika",
+  "listeningStatsCleared": "Kuulamisstatistika tühjendatud",
+  "listeningStatsDescription": "Jälgi kohalikku kuulamisstatistikat kuu- ja aastakokkuvõteteks.",
+  "loading": "Laadimine",
+  "lyrics": "Sõnad",
+  "lyricsNotAvailable": "Sõnad pole saadaval",
+  "makeOffline": "Tee võrguühenduseta kasutatavaks",
+  "minutes": "Minutit",
+  "minutesListened": "kuulatud minutit",
+  "monthlyListeners": "monthly listeners",
+  "moreOptions": "Rohkem valikuid",
+  "mostPlayed": "Enim esitatud",
+  "moveToFolder": "Liiguta kausta",
+  "name": "Nimi",
+  "newAnnouncement": "Uus teadaanne postitatud",
+  "newFolder": "Uus kaust",
+  "no": "Ei",
+  "noCustomPlaylists": "Kohandatud esitusloendeid pole veel loodud",
+  "noFolders": "Kaustu pole veel loodud",
+  "noListeningStats": "Kuulamisstatistikat pole veel",
+  "noOfflineLibraryContent": "Võrguühenduseta sisu puudub. Luba võrgurežiim või laadi teegi kasutamiseks alla esitusloendid/lood.",
+  "noPlaylistsAdded": "Esitusloendeid pole veel lisatud",
+  "noRadioStations": "Raadiojaamu pole saadaval",
+  "noSongsInPlaylist": "Esitusloendis pole lugusid",
+  "noSongsInQueue": "Järjekorras pole lugusid",
+  "notYTlist": "Vigane YouTube'i esitusloendi ID",
+  "offlineMode": "Võrguühenduseta režiim",
+  "offlineModeDescription": "Lülita välja võrgufunktsioonid ja kasuta Vybe't täielikult võrguühenduseta.",
+  "offlinePlaylists": "Võrguühenduseta esitusloendid",
+  "offlineSongs": "Võrguühenduseta lood",
+  "openChosicExporter": "Open Chosic Spotify exporter",
+  "others": "Muud",
+  "pasteCsv": "Paste CSV",
+  "pause": "Paus",
+  "pickImageFromDevice": "Vali pilt seadmest",
+  "pinToLibrary": "Kinnita muusikakogusse",
+  "pinnedPlaylists": "Kinnitatud esitusloendid",
+  "pinnedPlaylistsLimit": "Saad kinnitada kuni 5 esitusloendit või albumit",
+  "play": "Esita",
+  "playNext": "Esita järgmisena",
+  "playlist": "Esitusloend",
+  "playlistAlreadyDownloaded": "Esitusloend on juba alla laaditud",
+  "playlistAlreadyExists": "Esitusloend on juba olemas",
+  "playlistDownloaded": "Esitusloend alla laaditud",
+  "playlistEmpty": "Esitusloend on tühi",
+  "playlistFolders": "Esitusloendite kaustad",
+  "playlistName": "Playlist name",
+  "playlistRemovedFromOffline": "Esitusloend eemaldati võrguühenduseta režiimist",
+  "playlistUpdated": "Esitusloend edukalt uuendatud",
+  "playlists": "Esitusloendid",
+  "preferences": "Eelistused",
+  "provideIdOrNameError": "Palun sisesta YouTube'i ID või kohandatud esitusloendi nimi",
+  "pureBlackTheme": "Täielik must teema",
+  "pureBlackThemeDescription": "Use a true black background in dark mode for OLED displays.",
+  "queue": "Järjekord",
+  "radioStations": "Raadiojaamad",
+  "recentlyPlayed": "Hiljuti esitatud",
+  "recentlyPlayedMsg": "Hiljuti esitatud lugude ajalugu tühjendatud",
+  "recommendedForYou": "Sulle soovitatud",
+  "recommendedSongs": "Recommended songs",
+  "remove": "Eemalda",
+  "removeFromFolder": "Eemalda kaustast",
+  "removeFromLikedPlaylists": "Eemalda lemmikesitusloenditest",
+  "removeFromLikedSongs": "Eemalda lemmiklugude hulgast",
+  "removeFromPlaylist": "Eemalda esitusloendist",
+  "removeFromRecentlyPlayed": "Eemalda hiljuti esitatud lugude hulgast",
+  "removeOffline": "Eemalda võrguühenduseta režiimist",
+  "removeOfflinePlaylist": "Eemalda esitusloend võrguühenduseta režiimist",
+  "removeOfflinePlaylistConfirm": "See eemaldab esitusloendi võrguühenduseta režiimist. Lood, mida kasutatakse teistes esitusloendites, jäävad siiski kättesaadavaks.",
+  "removePlaylistQuestion": "Kas olete kindel, et soovite selle esitusloendi eemaldada?",
+  "removeSearchQueryQuestion": "Kas olete kindel, et soovite selle otsingupäringu eemaldada?",
+  "removedFromLikedSongs": "Eemaldatud lemmiklugude hulgast",
+  "renameSong": "Nimeta lugu ümber",
+  "repeat": "Korda",
+  "replay": "Esita uuesti",
+  "restoreError": "Andmete taastamisel tekkis viga",
+  "restoreUserData": "Taasta kasutajaandmed",
+  "restoredSuccess": "Andmed edukalt taastatud",
+  "search": "Otsi",
+  "searchHistoryMsg": "Otsinguajalugu tühjendatud",
+  "selectDuration": "Vali kestus",
+  "setTimer": "Seadista taimer",
+  "settingChangedMsg": "Seaded edukalt uuendatud",
+  "settings": "Seaded",
+  "share": "Jaga",
+  "shareRecap": "Jaga kokkuvõtet",
+  "shareTimeMachineText": "Minu Vybe kokkuvõte",
+  "shuffle": "Sega",
+  "single": "Single",
+  "singlesAndEps": "Singles & EPs",
+  "skipToNext": "Järgmisele",
+  "skipToPrevious": "Eelmisele",
+  "sleepTimer": "Unetaimer",
+  "sleepTimerCancelled": "Unetaimer tühistatud",
+  "sleepTimerSet": "Unetaimer seatud",
+  "songAdded": "Lugu lisatud",
+  "songAddedToOffline": "Lugu on nüüd saadaval võrguühenduseta",
+  "songAlreadyInPlaylist": "Lugu on juba esitusloendis",
+  "songInfoCopied": "Song info copied to clipboard",
+  "songRemoved": "Lugu eemaldatud",
+  "songRemovedFromOffline": "Lugu pole enam saadaval võrguühenduseta",
+  "songs": "Lood",
+  "sponsorBlockDescription": "Jäta vahele sponsoreeritud lõigud toetatud lugudes.",
+  "sponsorProject": "Toeta projekti",
+  "spotifyCsvHint": "Paste CSV content here",
+  "spotifyPlaylistAlreadyImporting": "An import is already in progress",
+  "spotifyPlaylistEmpty": "Choose a CSV file or paste CSV content first",
+  "spotifyPlaylistImportFailed": "Playlist import failed",
+  "spotifyPlaylistImportResult": "{found} of {total} songs imported",
+  "spotifyPlaylistImporting": "Importing playlist...",
+  "spotifyPlaylistInvalid": "The CSV does not contain Song and Artist columns",
+  "spotifyPlaylistMissingSongs": "Songs not found",
+  "spotifyPlaylistNameHint": "Imported Spotify playlist",
+  "spotifyPlaylistProgress": "Searching {done} of {total}",
+  "suggestedArtists": "Soovitatud artistid",
+  "suggestedPlaylists": "Soovitatud esitusloendid",
+  "syncAllNow": "Sync now",
+  "syncAllNowDescription": "{count, plural, =1{With the paired device that is online} other{With the {count} paired devices online}}",
+  "syncNow": "Sync",
+  "syncOnline": "{address} · Online",
+  "syncSyncedAll": "Synced with your devices",
+  "syncThisDevice": "This device",
+  "syncTitle": "Local sync",
+  "syncData": "Choose what to sync",
+  "syncSelections": "Only categories selected on both devices are exchanged. Settings and downloaded files stay on each device.",
+  "syncFavourites": "Liked songs",
+  "syncPlaylists": "Playlists, folders and pins",
+  "syncRecent": "Recently played",
+  "syncRecap": "Listening recap",
+  "syncSearches": "Search history",
+  "syncRadio": "Liked radio stations",
+  "syncPairTitle": "Pair with this device?",
+  "syncPinInstructions": "Enter the six-digit PIN shown on the other device.",
+  "syncPairDescription": "{device} wants to pair. Type this PIN there; cancel if you did not start it.",
+  "syncUnchanged": "No selected data changed.",
+  "syncOverNetwork": "Sync over local network",
+  "syncOffDescription": "Sync your library and listening recap between your devices over Wi-Fi. No account or cloud server.",
+  "syncDevices": "Devices",
+  "syncFindDevices": "Find devices on this network and pair them.",
+  "syncLastSynced": "Last sync: {time}",
+  "syncAutomatic": "Automatic sync",
+  "syncAutomaticDescription": "With paired devices that are online: at startup, shortly after a change and every 30 minutes.",
+  "syncCouldNotStart": "Could not start local sync",
+  "syncIsOff": "Turn on local sync to make this device visible to your other Vybe devices on the same network.",
+  "syncVisible": "This device is visible to other Vybe devices on the same network.",
+  "syncNotVisible": "Not visible right now. Local sync could not start.",
+  "syncScanAgain": "Scan again",
+  "syncScanning": "Looking for devices on your network...",
+  "syncConnecting": "Connecting...",
+  "syncPreparing": "Preparing your library...",
+  "syncSending": "Sending it to the other device...",
+  "syncMerging": "Merging what came back...",
+  "syncSyncingWith": "Syncing with {device}",
+  "syncSyncedWith": "Synced with {device}",
+  "syncPairWith": "Pair with {device}",
+  "syncPairedWith": "Paired with {device}",
+  "syncPair": "Pair",
+  "syncDone": "Done",
+  "syncOfflineDevice": "Offline",
+  "syncNoDevices": "No other Vybe device found. Turn on local sync on the other device and make sure both are on the same Wi-Fi.",
+  "syncForget": "Forget",
+  "syncForgetConfirm": "Forget {device}? You will need to pair again with a PIN before syncing with it.",
+  "syncForgetAll": "Forget all devices",
+  "syncForgetAllConfirm": "Forget every paired device? Each one will ask for a PIN again.",
+  "syncErrorNotRunning": "Turn on local sync on this device first.",
+  "syncErrorIncorrectPin": "Incorrect PIN. Check the code shown on {device}.",
+  "syncErrorRejected": "{device} rejected the pairing.",
+  "syncErrorBusy": "{device} is busy with another pairing attempt. Wait a few seconds and try again.",
+  "syncErrorUntrusted": "{device} no longer trusts this device. Forget it in the device list, then pair again.",
+  "syncErrorUpdate": "Update Vybe on both devices to use local sync.",
+  "syncErrorNoCategories": "Select at least one category that is enabled on both devices.",
+  "syncErrorTooLarge": "The selected data is too large. Choose fewer categories.",
+  "syncErrorUnreachable": "Could not reach {device}. Your data is safe; make sure both devices are on the same network.",
+  "syncErrorFailed": "Sync with {device} failed. Try again.",
+  "@syncAllNowDescription": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "@syncOnline": {
+    "placeholders": {
+      "address": {
+        "type": "String"
+      }
+    }
+  },
+  "@syncPairDescription": {
+    "placeholders": {
+      "device": {
+        "type": "String"
+      }
+    }
+  },
+  "@syncLastSynced": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "@syncSyncingWith": {
+    "placeholders": {
+      "device": {
+        "type": "String"
+      }
+    }
+  },
+  "@syncSyncedWith": {
+    "placeholders": {
+      "device": {
+        "type": "String"
+      }
+    }
+  },
+  "@syncPairWith": {
+    "placeholders": {
+      "device": {
+        "type": "String"
+      }
+    }
+  },
+  "@syncPairedWith": {
+    "placeholders": {
+      "device": {
+        "type": "String"
+      }
+    }
+  },
+  "@syncForgetConfirm": {
+    "placeholders": {
+      "device": {
+        "type": "String"
+      }
+    }
+  },
+  "@syncErrorIncorrectPin": {
+    "placeholders": {
+      "device": {
+        "type": "String"
+      }
+    }
+  },
+  "@syncErrorRejected": {
+    "placeholders": {
+      "device": {
+        "type": "String"
+      }
+    }
+  },
+  "@syncErrorBusy": {
+    "placeholders": {
+      "device": {
+        "type": "String"
+      }
+    }
+  },
+  "@syncErrorUntrusted": {
+    "placeholders": {
+      "device": {
+        "type": "String"
+      }
+    }
+  },
+  "@syncErrorUnreachable": {
+    "placeholders": {
+      "device": {
+        "type": "String"
+      }
+    }
+  },
+  "@syncErrorFailed": {
+    "placeholders": {
+      "device": {
+        "type": "String"
+      }
+    }
+  },
+  "syncedLyrics": "Synced lyrics",
+  "syncedLyricsDescription": "Highlight the current line and scroll along with the song when timed lyrics are available.",
+  "tapToView": "Puuduta vaatamiseks",
+  "themeMode": "Teemarežiim",
+  "themeModeDark": "Tume",
+  "themeModeLight": "Hele",
+  "themeModeSystem": "Süsteem",
+  "timeMachine": "Ajamasin",
+  "tools": "Tööriistad",
+  "topSongs": "Top songs",
+  "translate": "Tõlgi",
+  "translateDescription": "Aita tõlkida Vybe oma keelde Crowdinis.",
+  "understand": "Sain aru",
+  "undo": "Võta tagasi",
+  "unpinFromLibrary": "Eemalda kinnitus muusikakogust",
+  "update": "Uuenda",
+  "useProxy": "Kasuta proksit",
+  "useProxyDescription": "Kasuta proksit ainult siis, kui voogesitus ebaõnnestub; tarbetu kasutamine võib esituse katkestada.",
+  "userPlaylists": "Kasutaja esitusloendid",
+  "yes": "Jah",
+  "youtubePlaylistLinkOrId": "YouTube'i esitusloendi link või ID"
+}
