@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:fluentui_system_icons/fluentui_system_icons.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:material_ui/material_ui.dart';
 import 'package:vybe/constants/version.dart';
@@ -23,6 +25,8 @@ const String downloadUrlKey = 'url';
 const String downloadUrlArm64Key = 'arm64url';
 const String downloadFilename = 'Vybe.apk';
 
+final ValueNotifier<bool> isAppBlockedByUpdate = ValueNotifier<bool>(false);
+
 Future<void> checkAppUpdates() async {
   // Update distribution targets Android APK builds only.
   if (!isMobilePlatform || checkUrl.isEmpty) return;
@@ -40,111 +44,142 @@ Future<void> checkAppUpdates() async {
     announcementURL.value = map['announcementurl'];
     final latestVersion = map['version'].toString();
 
-    if (!isLatestVersionHigher(appVersion, latestVersion)) {
+    final isHigher = isLatestVersionHigher(appVersion, latestVersion);
+    final isForced = isHigher;
+
+    if (!isHigher) {
       return;
     }
+
+    isAppBlockedByUpdate.value = true;
 
     final releasesRequest = await http.get(Uri.parse(releasesUrl));
-
-    if (releasesRequest.statusCode != 200) {
-      logger.log(
-        'Fetch update API (releasesUrl) call returned status code ${response.statusCode}',
-      );
-      return;
-    }
-
-    final releasesResponse =
-        json.decode(releasesRequest.body) as Map<String, dynamic>;
+    final releasesResponse = releasesRequest.statusCode == 200
+        ? json.decode(releasesRequest.body) as Map<String, dynamic>
+        : <String, dynamic>{};
 
     await showDialog(
       context: NavigationManager().context,
+      barrierDismissible: !isForced,
       builder: (BuildContext context) {
         final colorScheme = Theme.of(context).colorScheme;
 
-        return AlertDialog(
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: colorScheme.primaryContainer,
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  FluentIcons.arrow_download_24_regular,
-                  color: colorScheme.onPrimaryContainer,
-                  size: 32,
-                ),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                context.l10n!.appUpdateIsAvailable,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.w600,
-                  color: colorScheme.onSurface,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 6,
-                ),
-                decoration: BoxDecoration(
-                  color: colorScheme.primaryContainer,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  'V$latestVersion',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: colorScheme.onPrimaryContainer,
+        return PopScope(
+          canPop: !isForced,
+          child: AlertDialog(
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: isForced
+                        ? colorScheme.errorContainer
+                        : colorScheme.primaryContainer,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    isForced
+                        ? FluentIcons.warning_24_filled
+                        : FluentIcons.arrow_download_24_regular,
+                    color: isForced
+                        ? colorScheme.onErrorContainer
+                        : colorScheme.onPrimaryContainer,
+                    size: 32,
                   ),
                 ),
-              ),
-              const SizedBox(height: 16),
-              Container(
-                constraints: BoxConstraints(
-                  maxHeight: MediaQuery.sizeOf(context).height / 2.5,
+                const SizedBox(height: 16),
+                Text(
+                  isForced
+                      ? 'Update Required'
+                      : context.l10n!.appUpdateIsAvailable,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w600,
+                    color: colorScheme.onSurface,
+                  ),
                 ),
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: colorScheme.surfaceContainerLow,
-                  borderRadius: BorderRadius.circular(16),
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: colorScheme.primaryContainer,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    'V$latestVersion',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: colorScheme.onPrimaryContainer,
+                    ),
+                  ),
                 ),
-                child: SingleChildScrollView(
-                  child: AutoFormatText(text: releasesResponse['body']),
+                const SizedBox(height: 16),
+                Container(
+                  constraints: BoxConstraints(
+                    maxHeight: MediaQuery.sizeOf(context).height / 2.5,
+                  ),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: colorScheme.surfaceContainerLow,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: SingleChildScrollView(
+                    child: AutoFormatText(
+                      text: isForced
+                          ? 'This older version of Vybe has been shut down.\n\nYou must update to version $latestVersion to continue using the app.'
+                          : (releasesResponse['body']?.toString() ?? ''),
+                    ),
+                  ),
                 ),
+              ],
+            ),
+            actionsAlignment: MainAxisAlignment.center,
+            actions: <Widget>[
+              if (isForced)
+                OutlinedButton(
+                  onPressed: SystemNavigator.pop,
+                  style: OutlinedButton.styleFrom(
+                    side: BorderSide(color: colorScheme.outline),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: const Text('Exit App'),
+                )
+              else
+                OutlinedButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: OutlinedButton.styleFrom(
+                    side: BorderSide(color: colorScheme.outline),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: Text(context.l10n!.cancel),
+                ),
+              FilledButton.icon(
+                onPressed: () {
+                  getDownloadUrl(map).then(
+                    (url) {
+                      launchURL(Uri.parse(url));
+                      if (!isForced) {
+                        Navigator.pop(context);
+                      }
+                    },
+                  );
+                },
+                icon: const Icon(FluentIcons.arrow_download_20_regular),
+                label: Text(isForced ? 'Update Now' : context.l10n!.download),
               ),
             ],
           ),
-          actionsAlignment: MainAxisAlignment.center,
-          actions: <Widget>[
-            OutlinedButton(
-              onPressed: () => Navigator.pop(context),
-              style: OutlinedButton.styleFrom(
-                side: BorderSide(color: colorScheme.outline),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-              child: Text(context.l10n!.cancel),
-            ),
-            FilledButton.icon(
-              onPressed: () {
-                getDownloadUrl(map).then(
-                  (url) => {launchURL(Uri.parse(url)), Navigator.pop(context)},
-                );
-              },
-              icon: const Icon(FluentIcons.arrow_download_20_regular),
-              label: Text(context.l10n!.download),
-            ),
-          ],
         );
       },
     );
@@ -271,6 +306,12 @@ Future<void> fetchAnnouncementOnly() async {
     final ann = map['announcementurl'];
     if (ann != null) {
       announcementURL.value = ann.toString();
+    }
+
+    final latestVersion = map['version']?.toString();
+    if (latestVersion != null && isLatestVersionHigher(appVersion, latestVersion)) {
+      isAppBlockedByUpdate.value = true;
+      unawaited(checkAppUpdates());
     }
   } catch (e, stackTrace) {
     logger.log(

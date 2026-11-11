@@ -13,6 +13,7 @@ import 'package:vybe/services/common_services.dart';
 import 'package:vybe/services/data_manager.dart';
 import 'package:vybe/services/listening_stats_service.dart';
 import 'package:vybe/services/settings_manager.dart';
+import 'package:vybe/services/update_manager.dart';
 import 'package:vybe/utilities/map_utils.dart';
 import 'package:vybe/utilities/media_duration.dart';
 import 'package:vybe/utilities/mediaitem.dart';
@@ -1899,6 +1900,11 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
     bool playWhenReady = true,
   }) async {
     try {
+      if (isAppBlockedByUpdate.value) {
+        logger.log('Playback blocked: app update required');
+        return false;
+      }
+
       final songData = cloneMap(song);
 
       if (songData['ytid'] == null || songData['ytid'].toString().isEmpty) {

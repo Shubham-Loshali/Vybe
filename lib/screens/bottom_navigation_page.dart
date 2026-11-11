@@ -7,8 +7,10 @@ import 'package:vybe/constants/app_constants.dart';
 import 'package:vybe/extensions/l10n.dart';
 import 'package:vybe/main.dart';
 import 'package:vybe/services/settings_manager.dart';
+import 'package:vybe/services/update_manager.dart';
 import 'package:vybe/utilities/flutter_bottom_sheet.dart'
     show closeCurrentBottomSheet;
+import 'package:vybe/utilities/url_launcher.dart';
 import 'package:vybe/widgets/mini_player.dart';
 
 class BottomNavigationPage extends StatefulWidget {
@@ -32,8 +34,15 @@ class _BottomNavigationPageState extends State<BottomNavigationPage> {
 
   @override
   Widget build(BuildContext context) {
-    return PopScope(
-      canPop: widget.child.currentIndex == 0,
+    return ValueListenableBuilder<bool>(
+      valueListenable: isAppBlockedByUpdate,
+      builder: (context, isBlocked, _) {
+        if (isBlocked) {
+          return const _ForceUpdateBlockingScreen();
+        }
+
+        return PopScope(
+          canPop: widget.child.currentIndex == 0,
       onPopInvokedWithResult: (didPop, _) {
         if (didPop) return;
 
@@ -142,6 +151,8 @@ class _BottomNavigationPageState extends State<BottomNavigationPage> {
         },
       ),
     );
+      },
+    );
   }
 
   List<_NavigationItem> _getNavigationItems(bool isOfflineMode) {
@@ -248,4 +259,101 @@ class _NavigationItem {
   final IconData selectedIcon;
   final String label;
   final int shellIndex;
+}
+
+class _ForceUpdateBlockingScreen extends StatelessWidget {
+  const _ForceUpdateBlockingScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: false,
+      child: Scaffold(
+        backgroundColor: const Color(0xFF121212),
+        body: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 32),
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    width: 80,
+                    height: 80,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE91E63).withValues(alpha: 0.15),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      FluentIcons.arrow_download_24_filled,
+                      color: Color(0xFFE91E63),
+                      size: 40,
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  const Text(
+                    'Update Required',
+                    style: TextStyle(
+                      fontSize: 26,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'This version of Vybe has been shut down and is no longer operational.\n\nYou must update to the latest version to continue using the app.',
+                    style: TextStyle(
+                      fontSize: 15,
+                      color: Color(0xFFB3B3B3),
+                      height: 1.5,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 36),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 50,
+                    child: ElevatedButton.icon(
+                      onPressed: () {
+                        launchURL(
+                          Uri.parse(
+                            'https://github.com/Shubham-Loshali/Vybe/releases/latest',
+                          ),
+                        );
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF1DB954),
+                        foregroundColor: Colors.black,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(25),
+                        ),
+                        textStyle: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      icon: const Icon(FluentIcons.arrow_download_20_filled),
+                      label: const Text('Update Vybe Now'),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextButton(
+                    onPressed: SystemNavigator.pop,
+                    child: const Text(
+                      'Exit App',
+                      style: TextStyle(
+                        color: Color(0xFFB3B3B3),
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
