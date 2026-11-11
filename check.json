@@ -1,4 +1,6 @@
 {
-  "version": "10.6.0",
-  "announcementurl": null
+  "version": "10.6.1",
+  "url": "https://github.com/Shubham-Loshali/Vybe/releases/download/v10.6.1/Vybe.apk",
+  "arm64url": "https://github.com/Shubham-Loshali/Vybe/releases/download/v10.6.1/Vybe.apk",
+  "announcementurl": "https://github.com/Shubham-Loshali/Vybe/releases/tag/v10.6.1"
 }
