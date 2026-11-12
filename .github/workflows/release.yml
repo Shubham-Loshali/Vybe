@@ -30,7 +30,7 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
-          java-version: '17.x'
+          java-version: '21'
 
       # Gradle cache for faster builds
       - name: Cache Gradle dependencies
@@ -44,13 +44,10 @@ jobs:
             ${{ runner.os }}-gradle-
 
       # Setup the Flutter environment.
-      - run: |
-          pip install -U yq
-          echo "FLUTTER_VERSION=$(yq -r .environment.flutter pubspec.yaml | sed 's/\^//g')" >> $GITHUB_ENV
       - uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
-          flutter-version: "${{ env.FLUTTER_VERSION }}"
+          flutter-version: '3.50.0'
 
       #
       - run: |

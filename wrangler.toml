@@ -1,0 +1,6 @@
+# The repository root deploys only the app update service.
+# The optional Spotify exporter has its own configuration in workers/spotify-exporter.
+name = "vybe"
+main = "workers/update-policy/worker.mjs"
+compatibility_date = "2026-11-13"
+workers_dev = true
