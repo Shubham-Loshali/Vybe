@@ -114,7 +114,7 @@ Whether you're discovering new tracks or revisiting your favourites, Vybe lets y
 ### Android
 
 <p align="center">
-  <a href="https://github.com/Shubham-Loshali/Vybe/releases/tag/v10.6.0">
+  <a href="https://github.com/Shubham-Loshali/Vybe/releases/tag/v10.6.2">
     <img src="https://img.shields.io/badge/GET%20VYBE%20NOW-Download%20APK-1DB954?style=for-the-badge&logo=android&logoColor=white" alt="Download APK" />
   </a>
 </p>
