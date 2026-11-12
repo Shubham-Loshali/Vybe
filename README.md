@@ -13,8 +13,8 @@
 
 
 <p align="center">
-  <a href="https://github.com/Shubham-Loshali/Vybe/releases/tag/v10.6.3">
-    <img src="https://img.shields.io/badge/⬇%20DOWNLOAD%20VYBE%20FOR%20ANDROID-GET%20V10.6.3-16C75B?style=for-the-badge&logo=android&logoColor=white&labelColor=111111" alt="Download Vybe" />
+  <a href="https://github.com/Shubham-Loshali/Vybe/releases/tag/v10.6.4">
+    <img src="https://img.shields.io/badge/⬇%20DOWNLOAD%20VYBE%20FOR%20ANDROID-GET%20V10.6.4-16C75B?style=for-the-badge&logo=android&logoColor=white&labelColor=111111" alt="Download Vybe" />
   </a>
 </p>
 <p align="center">
@@ -28,7 +28,7 @@
   <img src="https://img.shields.io/badge/Platform-Android-brightgreen?style=flat-square&logo=android" />
   <img src="https://img.shields.io/badge/Built%20With-Flutter-blue?style=flat-square&logo=flutter" />
   <img src="https://img.shields.io/badge/License-GPL--3.0-orange?style=flat-square" />
-  <img src="https://img.shields.io/badge/Version-10.6.3-purple?style=flat-square" />
+  <img src="https://img.shields.io/badge/Version-10.6.4-purple?style=flat-square" />
 </p>
 
 ---
@@ -132,12 +132,12 @@ credentials on your server. The build setting is a URL and is visible in the APK
 ### Android
 
 <p align="center">
-  <a href="https://github.com/Shubham-Loshali/Vybe/releases/tag/v10.6.3">
+  <a href="https://github.com/Shubham-Loshali/Vybe/releases/tag/v10.6.4">
     <img src="https://img.shields.io/badge/GET%20VYBE%20NOW-Download%20APK-1DB954?style=for-the-badge&logo=android&logoColor=white" alt="Download APK" />
   </a>
 </p>
 
-1. Visit the [Vybe v10.6.3 Release Page](https://github.com/Shubham-Loshali/Vybe/releases/tag/v10.6.3).
+1. Visit the [Vybe v10.6.4 Release Page](https://github.com/Shubham-Loshali/Vybe/releases/tag/v10.6.4).
 2. Download the APK asset.
 3. Open the downloaded APK on your Android device.
 4. Follow the installation instructions.
@@ -224,7 +224,7 @@ Third-party names and trademarks belong to their respective owners. Music availa
 </p>
 
 <p align="center">
-  <a href="https://github.com/Shubham-Loshali/Vybe/releases/tag/v10.6.3">⬇ Download Vybe</a>
+  <a href="https://github.com/Shubham-Loshali/Vybe/releases/tag/v10.6.4">⬇ Download Vybe</a>
   &nbsp; • &nbsp;
   <a href="https://github.com/Shubham-Loshali/Vybe">⭐ Star on GitHub</a>
 </p>
