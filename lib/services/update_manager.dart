@@ -20,7 +20,7 @@ import 'package:vybe/widgets/auto_format_text.dart';
 /// Primary private Cloudflare Worker update endpoint.
 /// Set your worker URL here once created (e.g. https://vybe-api.workers.dev/check).
 const String cloudflareWorkerUrl =
-    'https://vybe-api.shubham-loshali.workers.dev/check';
+    'https://vybe.shubham-loshali18.workers.dev/check';
 const String fallbackCheckUrl =
     'https://raw.githubusercontent.com/Shubham-Loshali/Vybe/update/check.json';
 const String checkUrl = fallbackCheckUrl;

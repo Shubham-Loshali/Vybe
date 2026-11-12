@@ -5,7 +5,7 @@ repository: https://github.com/Shubham-Loshali/Vybe
 issue_tracker: https://github.com/Shubham-Loshali/Vybe/issues
 
 publish_to: 'none'
-version: 10.6.1+187 # run update.sh after changing the version
+version: 10.6.2+188 # run update.sh after changing the version
 
 environment:
   sdk: '>=3.13.0 <4.0.0'
