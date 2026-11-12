@@ -10,11 +10,7 @@
   <strong>Done with ads? Ready for a better music experience?</strong>
   <br />
   Stream, discover, download, and enjoy your favourite music — without interruptions.
-</p>
-<p align="center">
-  <a href="https://github.com/Shubham-Loshali/Vybe/releases/tag/v10.6.2">⬇ Download Vybe</a>
-  &nbsp; • &nbsp;
-</p>
+
 
 <p align="center">
   <a href="https://github.com/Shubham-Loshali/Vybe/releases/tag/v10.6.2">
