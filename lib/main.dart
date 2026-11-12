@@ -156,7 +156,13 @@ class _VybeState extends State<Vybe> with WidgetsBindingObserver {
     }
 
     if (!isFdroidBuild && isMobilePlatform) {
-      if (shouldWeCheckUpdates.value == true) {
+      if (shouldWeCheckUpdates.value != false) {
+        // Enable update checks automatically in background for new users without showing prompt
+        if (shouldWeCheckUpdates.value == null) {
+          shouldWeCheckUpdates.value = true;
+          addOrUpdateData<bool>('settings', 'shouldWeCheckUpdates', true);
+        }
+
         if (!isUpdateChecked && kReleaseMode) {
           SchedulerBinding.instance.addPostFrameCallback((_) {
             if (!offlineMode.value) {
@@ -166,18 +172,11 @@ class _VybeState extends State<Vybe> with WidgetsBindingObserver {
           });
         }
       } else {
-        if (shouldWeCheckUpdates.value == null) {
-          // show dialog that asks user if they want to enable update checks
-          SchedulerBinding.instance.addPostFrameCallback((_) {
-            showUpdateCheckDialog(NavigationManager().context);
-          });
-        } else {
-          SchedulerBinding.instance.addPostFrameCallback((_) async {
-            if (!offlineMode.value) {
-              await fetchAnnouncementOnly();
-            }
-          });
-        }
+        SchedulerBinding.instance.addPostFrameCallback((_) async {
+          if (!offlineMode.value) {
+            await fetchAnnouncementOnly();
+          }
+        });
       }
     }
   }

@@ -17,8 +17,13 @@ import 'package:vybe/utilities/platform_utils.dart';
 import 'package:vybe/utilities/url_launcher.dart';
 import 'package:vybe/widgets/auto_format_text.dart';
 
-const String checkUrl =
+/// Primary private Cloudflare Worker update endpoint.
+/// Set your worker URL here once created (e.g. https://vybe-api.workers.dev/check).
+const String cloudflareWorkerUrl =
+    'https://vybe-api.shubham-loshali.workers.dev/check';
+const String fallbackCheckUrl =
     'https://raw.githubusercontent.com/Shubham-Loshali/Vybe/update/check.json';
+const String checkUrl = fallbackCheckUrl;
 const String releasesUrl =
     'https://api.github.com/repos/Shubham-Loshali/Vybe/releases/latest';
 const String downloadUrlKey = 'url';
@@ -27,31 +32,60 @@ const String downloadFilename = 'Vybe.apk';
 
 final ValueNotifier<bool> isAppBlockedByUpdate = ValueNotifier<bool>(false);
 
+Future<Map<String, dynamic>?> _fetchUpdateConfig() async {
+  // 1. Try private Cloudflare Worker first (instant, real-time, zero caching)
+  if (cloudflareWorkerUrl.isNotEmpty) {
+    try {
+      final response = await http
+          .get(Uri.parse(cloudflareWorkerUrl))
+          .timeout(const Duration(seconds: 4));
+      if (response.statusCode == 200) {
+        return json.decode(response.body) as Map<String, dynamic>;
+      }
+    } catch (_) {
+      // Worker not reached or not deployed yet, fall back cleanly
+    }
+  }
+
+  // 2. Fall back to GitHub raw check.json
+  try {
+    final response = await http
+        .get(Uri.parse(fallbackCheckUrl))
+        .timeout(const Duration(seconds: 5));
+    if (response.statusCode == 200) {
+      return json.decode(response.body) as Map<String, dynamic>;
+    }
+  } catch (e, stackTrace) {
+    logger.log(
+      'Failed to fetch update config from all endpoints',
+      error: e,
+      stackTrace: stackTrace,
+    );
+  }
+
+  return null;
+}
+
 Future<void> checkAppUpdates() async {
   // Update distribution targets Android APK builds only.
-  if (!isMobilePlatform || checkUrl.isEmpty) return;
+  if (!isMobilePlatform) return;
   try {
-    final response = await http.get(Uri.parse(checkUrl));
-
-    if (response.statusCode != 200) {
-      logger.log(
-        'Fetch update API (checkUrl) call returned status code ${response.statusCode}',
-      );
-      return;
-    }
-
-    final map = json.decode(response.body) as Map<String, dynamic>;
+    final map = await _fetchUpdateConfig();
+    if (map == null) return;
     announcementURL.value = map['announcementurl'];
-    final latestVersion = map['version'].toString();
+    final latestVersion = map['version']?.toString() ?? '';
+    final forceShutdown = map['force_shutdown'] == true;
 
     final isHigher = isLatestVersionHigher(appVersion, latestVersion);
-    final isForced = isHigher;
+    final isForced = isHigher || forceShutdown;
 
-    if (!isHigher) {
+    if (!isHigher && !forceShutdown) {
       return;
     }
 
-    isAppBlockedByUpdate.value = true;
+    if (isForced) {
+      isAppBlockedByUpdate.value = true;
+    }
 
     final releasesRequest = await http.get(Uri.parse(releasesUrl));
     final releasesResponse = releasesRequest.statusCode == 200
@@ -248,18 +282,38 @@ void showUpdateCheckDialog(BuildContext context) {
 }
 
 bool isLatestVersionHigher(String appVersion, String latestVersion) {
-  final parsedAppVersion = appVersion.split('.');
-  final parsedAppLatestVersion = latestVersion.split('.');
+  final cleanApp = appVersion
+      .trim()
+      .toLowerCase()
+      .replaceAll(RegExp(r'^v'), '')
+      .split('+')[0]
+      .trim();
+  final cleanLatest = latestVersion
+      .trim()
+      .toLowerCase()
+      .replaceAll(RegExp(r'^v'), '')
+      .split('+')[0]
+      .trim();
+
+  // If both versions are strictly identical, remote is NOT higher
+  if (cleanApp == cleanLatest) {
+    return false;
+  }
+
+  final parsedAppVersion = cleanApp.split('.');
+  final parsedAppLatestVersion = cleanLatest.split('.');
   final length = parsedAppVersion.length > parsedAppLatestVersion.length
       ? parsedAppVersion.length
       : parsedAppLatestVersion.length;
+
   for (var i = 0; i < length; i++) {
-    final value1 = i < parsedAppVersion.length
-        ? int.parse(parsedAppVersion[i])
-        : 0;
-    final value2 = i < parsedAppLatestVersion.length
-        ? int.parse(parsedAppLatestVersion[i])
-        : 0;
+    final segment1 = i < parsedAppVersion.length ? parsedAppVersion[i] : '0';
+    final segment2 =
+        i < parsedAppLatestVersion.length ? parsedAppLatestVersion[i] : '0';
+
+    final value1 = int.tryParse(segment1) ?? 0;
+    final value2 = int.tryParse(segment2) ?? 0;
+
     if (value2 > value1) {
       return true;
     } else if (value2 < value1) {
@@ -291,25 +345,19 @@ Future<String> getDownloadUrl(Map<String, dynamic> map) async {
 /// fetching or any update dialogs/downloads and is safe to call for F‑Droid
 /// builds where update prompts are not allowed.
 Future<void> fetchAnnouncementOnly() async {
-  if (checkUrl.isEmpty) return;
   try {
-    final response = await http.get(Uri.parse(checkUrl));
+    final map = await _fetchUpdateConfig();
+    if (map == null) return;
 
-    if (response.statusCode != 200) {
-      logger.log(
-        'Fetch announcement (checkUrl) call returned status code ${response.statusCode}',
-      );
-      return;
-    }
-
-    final map = json.decode(response.body) as Map<String, dynamic>;
     final ann = map['announcementurl'];
     if (ann != null) {
       announcementURL.value = ann.toString();
     }
 
     final latestVersion = map['version']?.toString();
-    if (latestVersion != null && isLatestVersionHigher(appVersion, latestVersion)) {
+    final forceShutdown = map['force_shutdown'] == true;
+    if (forceShutdown ||
+        (latestVersion != null && isLatestVersionHigher(appVersion, latestVersion))) {
       isAppBlockedByUpdate.value = true;
       unawaited(checkAppUpdates());
     }
