@@ -119,7 +119,7 @@ Whether you're discovering new tracks or revisiting your favourites, Vybe lets y
   </a>
 </p>
 
-1. Visit the [Vybe v10.6.0 Release Page](https://github.com/Shubham-Loshali/Vybe/releases/tag/v10.6.0).
+1. Visit the [Vybe v10.6.2 Release Page](https://github.com/Shubham-Loshali/Vybe/releases/tag/v10.6.2).
 2. Download the APK asset.
 3. Open the downloaded APK on your Android device.
 4. Follow the installation instructions.
