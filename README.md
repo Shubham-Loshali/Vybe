@@ -14,7 +14,7 @@
 
 <p align="center">
   <a href="https://github.com/Shubham-Loshali/Vybe/releases/tag/v10.6.2">
-    <img src="https://img.shields.io/badge/⬇%20DOWNLOAD%20VYBE%20FOR%20ANDROID-GET%20V10.6.0-16C75B?style=for-the-badge&logo=android&logoColor=white&labelColor=111111" alt="Download Vybe" />
+    <img src="https://img.shields.io/badge/⬇%20DOWNLOAD%20VYBE%20FOR%20ANDROID-GET%20V10.6.2-16C75B?style=for-the-badge&logo=android&logoColor=white&labelColor=111111" alt="Download Vybe" />
   </a>
 </p>
 <p align="center">
