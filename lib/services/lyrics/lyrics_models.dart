@@ -25,14 +25,18 @@ class TrackInfo {
 
 /// One timed line of a synchronized (LRC) lyrics file.
 class LyricLine {
-  const LyricLine(this.start, this.text);
+  const LyricLine(this.start, this.text, {this.wordCues = const []});
 
   final Duration start;
   final String text;
+  final List<LyricWordCue> wordCues;
 
   @override
   String toString() => '[$start] $text';
 }
+
+/// A timestamp attached to a word in the first row of a lyric line.
+typedef LyricWordCue = ({int wordIndex, Duration start});
 
 /// Lyrics returned by a provider.
 ///
@@ -48,7 +52,15 @@ class Lyrics {
     if (isSynced)
       'synced': [
         for (final line in synced!)
-          {'start': line.start.inMilliseconds, 'text': line.text},
+          {
+            'start': line.start.inMilliseconds,
+            'text': line.text,
+            if (line.wordCues.isNotEmpty)
+              'wordCues': [
+                for (final cue in line.wordCues)
+                  {'word': cue.wordIndex, 'start': cue.start.inMilliseconds},
+              ],
+          },
       ],
   };
 
@@ -61,7 +73,24 @@ class Lyrics {
         if (raw is! Map || raw['start'] is! int || raw['text'] is! String) {
           return null;
         }
-        lines.add(LyricLine(Duration(milliseconds: raw['start']), raw['text']));
+        final cues = <LyricWordCue>[];
+        final rawCues = raw['wordCues'];
+        if (rawCues is List) {
+          for (final cue in rawCues.whereType<Map>()) {
+            final word = cue['word'];
+            final start = cue['start'];
+            if (word is int && word >= 0 && start is int && start >= 0) {
+              cues.add((wordIndex: word, start: Duration(milliseconds: start)));
+            }
+          }
+        }
+        lines.add(
+          LyricLine(
+            Duration(milliseconds: raw['start']),
+            raw['text'],
+            wordCues: cues,
+          ),
+        );
       }
       lines.sort((a, b) => a.start.compareTo(b.start));
     }

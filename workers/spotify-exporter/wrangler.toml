@@ -1,0 +1,8 @@
+name = "vybe-spotify-exporter"
+main = "worker.mjs"
+compatibility_date = "2026-11-13"
+
+[[ratelimits]]
+name = "EXPORT_RATE_LIMIT"
+namespace_id = "82104"
+simple = { limit = 3, period = 60 }

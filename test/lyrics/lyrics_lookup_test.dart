@@ -50,6 +50,20 @@ void main() {
     expect(lines.last.start.inMilliseconds, 2050);
   });
 
+  test('preserves enhanced word timing through offsets, repeats and cache', () {
+    final lines = parseLrc(
+      '[00:02][00:08]<00:02.00>पहला <00:02.75>शब्द<00:03.50>\n[offset:250]',
+    );
+    expect(lines.map((line) => line.text), ['पहला शब्द', 'पहला शब्द']);
+    expect(lines.first.wordCues.map((cue) => cue.wordIndex), [0, 1]);
+    expect(lines.first.wordCues.last.start.inMilliseconds, 2500);
+    expect(lines.last.wordCues.last.start.inMilliseconds, 8500);
+    final saved = Lyrics.fromJson(
+      Lyrics(source: 'fixture', synced: lines).toJson(),
+    );
+    expect(saved!.synced!.last.wordCues, lines.last.wordCues);
+  });
+
   test(
     'active lookup handles pre-roll, exact boundaries and backwards seeking',
     () {

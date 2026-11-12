@@ -30,6 +30,9 @@ const String downloadUrlKey = 'url';
 const String downloadUrlArm64Key = 'arm64url';
 const String downloadFilename = 'Vybe.apk';
 
+const _isCompanionBuild =
+    String.fromEnvironment('FLUTTER_APP_FLAVOR') == 'companion';
+Future<void>? _pendingUpdateCheck;
 final ValueNotifier<bool> isAppBlockedByUpdate = ValueNotifier<bool>(false);
 
 Future<Map<String, dynamic>?> _fetchUpdateConfig() async {
@@ -66,7 +69,13 @@ Future<Map<String, dynamic>?> _fetchUpdateConfig() async {
   return null;
 }
 
-Future<void> checkAppUpdates() async {
+Future<void> checkAppUpdates() {
+  return _pendingUpdateCheck ??= _checkAppUpdates().whenComplete(() {
+    _pendingUpdateCheck = null;
+  });
+}
+
+Future<void> _checkAppUpdates() async {
   // Update distribution targets Android APK builds only.
   if (!isMobilePlatform) return;
   try {
@@ -86,7 +95,9 @@ Future<void> checkAppUpdates() async {
       isAppBlockedByUpdate.value = true;
     }
 
-    final releasesRequest = await http.get(Uri.parse(releasesUrl));
+    final releasesRequest = await http
+        .get(Uri.parse(releasesUrl))
+        .timeout(const Duration(seconds: 5));
     final releasesResponse = releasesRequest.statusCode == 200
         ? json.decode(releasesRequest.body) as Map<String, dynamic>
         : <String, dynamic>{};
@@ -199,14 +210,12 @@ Future<void> checkAppUpdates() async {
                 ),
               FilledButton.icon(
                 onPressed: () {
-                  getDownloadUrl(map).then(
-                    (url) {
-                      launchURL(Uri.parse(url));
-                      if (!isForced) {
-                        Navigator.pop(context);
-                      }
-                    },
-                  );
+                  getDownloadUrl(map).then((url) {
+                    launchURL(Uri.parse(url));
+                    if (!isForced) {
+                      Navigator.pop(context);
+                    }
+                  });
                 },
                 icon: const Icon(FluentIcons.arrow_download_20_regular),
                 label: Text(isForced ? 'Update Now' : context.l10n!.download),
@@ -307,8 +316,9 @@ bool isLatestVersionHigher(String appVersion, String latestVersion) {
 
   for (var i = 0; i < length; i++) {
     final segment1 = i < parsedAppVersion.length ? parsedAppVersion[i] : '0';
-    final segment2 =
-        i < parsedAppLatestVersion.length ? parsedAppLatestVersion[i] : '0';
+    final segment2 = i < parsedAppLatestVersion.length
+        ? parsedAppLatestVersion[i]
+        : '0';
 
     final value1 = int.tryParse(segment1) ?? 0;
     final value2 = int.tryParse(segment2) ?? 0;
@@ -331,12 +341,21 @@ Future<String> getCPUArchitecture() async {
 }
 
 Future<String> getDownloadUrl(Map<String, dynamic> map) async {
+  if (_isCompanionBuild) {
+    final companion = map['companion_url'];
+    if (companion is String && Uri.tryParse(companion)?.scheme == 'https') {
+      return companion;
+    }
+    return 'https://github.com/Shubham-Loshali/Vybe/releases/latest';
+  }
   final cpuArchitecture = await getCPUArchitecture();
   final url = cpuArchitecture == 'aarch64'
       ? map[downloadUrlArm64Key].toString()
       : map[downloadUrlKey].toString();
 
-  return url;
+  return Uri.tryParse(url)?.scheme == 'https'
+      ? url
+      : 'https://github.com/Shubham-Loshali/Vybe/releases/latest';
 }
 
 /// Check for forced updates or updates safe to call for F‑Droid
@@ -349,7 +368,8 @@ Future<void> fetchAnnouncementOnly() async {
     final latestVersion = map['version']?.toString();
     final forceShutdown = map['force_shutdown'] == true;
     if (forceShutdown ||
-        (latestVersion != null && isLatestVersionHigher(appVersion, latestVersion))) {
+        (latestVersion != null &&
+            isLatestVersionHigher(appVersion, latestVersion))) {
       isAppBlockedByUpdate.value = true;
       unawaited(checkAppUpdates());
     }

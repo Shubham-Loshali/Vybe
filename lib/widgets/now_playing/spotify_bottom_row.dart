@@ -1,17 +1,17 @@
+import 'dart:async';
+
 import 'package:audio_service/audio_service.dart';
 import 'package:fluentui_system_icons/fluentui_system_icons.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:vybe/extensions/l10n.dart';
+import 'package:vybe/main.dart' show audioHandler;
 import 'package:vybe/utilities/flutter_bottom_sheet.dart';
 import 'package:vybe/utilities/flutter_toast.dart';
 import 'package:vybe/widgets/queue_list_view.dart';
-import 'package:share_plus/share_plus.dart';
 
 class SpotifyBottomRow extends StatelessWidget {
-  const SpotifyBottomRow({
-    super.key,
-    required this.metadata,
-  });
+  const SpotifyBottomRow({super.key, required this.metadata});
 
   final MediaItem metadata;
 
@@ -25,10 +25,7 @@ class SpotifyBottomRow extends StatelessWidget {
 
     try {
       await SharePlus.instance.share(
-        ShareParams(
-          text: text,
-          subject: '$title - Vybe',
-        ),
+        ShareParams(text: text, subject: '$title - Vybe'),
       );
     } catch (_) {
       if (context.mounted) {
@@ -47,22 +44,21 @@ class SpotifyBottomRow extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          // Device connect button
+          // Playback volume
           IconButton(
             iconSize: iconSize,
             icon: const Icon(
               FluentIcons.speaker_2_24_regular,
               color: iconColor,
             ),
-            tooltip: 'Devices',
+            tooltip: 'Volume',
             style: IconButton.styleFrom(
               backgroundColor: Colors.transparent,
               splashFactory: NoSplash.splashFactory,
               padding: const EdgeInsets.all(8),
             ),
-            onPressed: () {
-              showToast(context, 'Playing on this device');
-            },
+            onPressed: () =>
+                showCustomBottomSheet(context, const _VolumePanel()),
           ),
           // Right actions: Share & Queue
           Row(
@@ -108,3 +104,51 @@ class SpotifyBottomRow extends StatelessWidget {
   }
 }
 
+class _VolumePanel extends StatelessWidget {
+  const _VolumePanel();
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<double>(
+      stream: audioHandler.volumeStream,
+      initialData: audioHandler.volume,
+      builder: (context, snapshot) {
+        final volume = (snapshot.data ?? 1).clamp(0.0, 1.0);
+        final percent = (volume * 100).round();
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Volume', style: Theme.of(context).textTheme.titleLarge),
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  Icon(
+                    volume == 0
+                        ? Icons.volume_off_rounded
+                        : Icons.volume_down_rounded,
+                  ),
+                  Expanded(
+                    child: Slider(
+                      value: volume,
+                      onChanged: (value) =>
+                          unawaited(audioHandler.setVolume(value)),
+                      semanticFormatterCallback: (value) =>
+                          '${(value * 100).round()}%',
+                    ),
+                  ),
+                  SizedBox(
+                    width: 48,
+                    child: Text('$percent%', textAlign: TextAlign.end),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}

@@ -5,13 +5,13 @@ final RegExp _offsetTag = RegExp(
   r'^\s*\[offset:\s*([+-]?\d+)\s*\]\s*$',
   caseSensitive: false,
 );
-final RegExp _wordTag = RegExp(r'<\d{1,3}:\d{1,2}(?:[.:]\d{1,3})?>');
+final RegExp _wordTag = RegExp(r'<(\d{1,3}):(\d{1,2})(?:[.:](\d{1,3}))?>');
 
 /// Parses LRC text into time-sorted lines.
 ///
 /// Supports `[mm:ss]`, `[mm:ss.xx]`, `[mm:ss.xxx]`, several timestamps on one
 /// line, the `[offset:ms]` header and enhanced `<mm:ss.xx>` word tags (which
-/// are stripped). Metadata tags such as `[ar:...]` are ignored.
+/// supply word timestamps). Metadata tags such as `[ar:...]` are ignored.
 List<LyricLine> parseLrc(String input) {
   final lines = <LyricLine>[];
   // The offset is file-wide, including when it appears after timed lines.
@@ -32,26 +32,36 @@ List<LyricLine> parseLrc(String input) {
     final matches = _timeTag.allMatches(raw).toList();
     if (matches.isEmpty) continue;
 
-    final text = raw
-        .substring(matches.last.end)
+    final lyric = raw.substring(matches.last.end);
+    final text = lyric
         .replaceAll(_wordTag, '')
         .replaceAll(RegExp(r'\s+'), ' ')
         .trim();
+    final cues = <LyricWordCue>[];
+    for (final tag in _wordTag.allMatches(lyric)) {
+      final following = lyric.substring(tag.end).trimLeft();
+      if (following.isEmpty || following.startsWith('<')) continue;
+      final preceding = lyric.substring(0, tag.start).replaceAll(_wordTag, '');
+      final wordIndex = RegExp(r'\S+').allMatches(preceding).length;
+      cues.add((wordIndex: wordIndex, start: _timestamp(tag, offsetMs)));
+    }
 
-    for (final m in matches) {
-      final minutes = int.parse(m.group(1)!);
-      final seconds = int.parse(m.group(2)!);
-      final fraction = m.group(3);
-      var millis = 0;
-      if (fraction != null) {
-        // "5" -> 500ms, "50" -> 500ms, "500" -> 500ms
-        millis = int.parse(fraction.padRight(3, '0').substring(0, 3));
-      }
-      final total =
-          Duration(minutes: minutes, seconds: seconds, milliseconds: millis) -
-          // LRC offset: positive values make lyrics appear sooner.
-          Duration(milliseconds: offsetMs);
-      lines.add(LyricLine(total.isNegative ? Duration.zero : total, text));
+    final firstStart = _timestamp(matches.first, offsetMs);
+    for (final tag in matches) {
+      final start = _timestamp(tag, offsetMs);
+      lines.add(
+        LyricLine(
+          start,
+          text,
+          wordCues: [
+            for (final cue in cues)
+              (
+                wordIndex: cue.wordIndex,
+                start: start + (cue.start - firstStart),
+              ),
+          ],
+        ),
+      );
     }
   }
 
@@ -72,10 +82,34 @@ List<LyricLine> parseLrc(String input) {
         if (previous.text.isNotEmpty) previous.text,
         if (line.text.isNotEmpty) line.text,
       };
-      merged.add(LyricLine(line.start, texts.join('\n')));
+      merged.add(
+        LyricLine(
+          line.start,
+          texts.join('\n'),
+          wordCues:
+              previous.text.isEmpty ||
+                  previous.text == line.text && previous.wordCues.isEmpty
+              ? line.wordCues
+              : previous.wordCues,
+        ),
+      );
     } else {
       merged.add(line);
     }
   }
   return merged;
+}
+
+Duration _timestamp(Match tag, int offsetMs) {
+  final fraction = tag.group(3);
+  final milliseconds = fraction == null
+      ? 0
+      : int.parse(fraction.padRight(3, '0'));
+  // Positive LRC offsets show the words sooner.
+  final time = Duration(
+    minutes: int.parse(tag.group(1)!),
+    seconds: int.parse(tag.group(2)!),
+    milliseconds: milliseconds - offsetMs,
+  );
+  return time.isNegative ? Duration.zero : time;
 }

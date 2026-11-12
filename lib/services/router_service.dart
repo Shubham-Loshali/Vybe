@@ -56,7 +56,10 @@ class NavigationManager {
         final currentPath = state.matchedLocation;
 
         if (isOffline &&
-            (currentPath == searchPath || currentPath == timeMachinePath)) {
+            (currentPath == searchPath ||
+                currentPath == timeMachinePath ||
+                currentPath == importPath ||
+                currentPath == '$settingsPath/import-spotify-playlist')) {
           // Redirect unavailable pages to home in offline mode
           return homePath;
         }
@@ -115,6 +118,8 @@ class NavigationManager {
   static const String settingsPath = '/settings';
   static const String searchPath = '/search';
   static const String libraryPath = '/library';
+  static const String importPath = '/import-playlist';
+  static const int importBranchIndex = 4;
 
   /// Refresh the router configuration when offline mode changes
   static void refreshRouter() {
@@ -261,6 +266,16 @@ class NavigationManager {
                     _pushPage(child: const LocalSyncPage(), state: state),
               ),
             ],
+          ),
+        ],
+      ),
+      // Branch 4: Import
+      StatefulShellBranch(
+        routes: [
+          GoRoute(
+            path: importPath,
+            pageBuilder: (context, state) =>
+                getPage(child: const ImportSpotifyPlaylistPage(), state: state),
           ),
         ],
       ),

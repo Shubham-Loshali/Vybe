@@ -12,6 +12,7 @@ import 'package:vybe/services/settings_manager.dart';
 import 'package:vybe/utilities/artwork_color_extractor.dart';
 import 'package:vybe/utilities/artwork_provider.dart';
 import 'package:vybe/utilities/lyrics_import.dart';
+import 'package:vybe/widgets/now_playing/karaoke_lyric_text.dart';
 import 'package:vybe/widgets/now_playing/lyrics_backdrop.dart';
 import 'package:vybe/widgets/now_playing/synced_lyrics_view.dart';
 
@@ -206,14 +207,14 @@ class _SpotifyLyricsCardState extends State<SpotifyLyricsCard> {
                               valueListenable: syncedLyricsEnabled,
                               builder: (context, enabled, _) =>
                                   result.isSynced && enabled
-                                  ? StreamBuilder<PositionData>(
-                                      stream: audioHandler.positionDataStream,
-                                      initialData:
-                                          audioHandler.currentPositionData,
+                                  ? StreamBuilder<Duration>(
+                                      stream: audioHandler.lyricsPositionStream,
+                                      initialData: audioHandler
+                                          .currentPositionData
+                                          .position,
                                       builder: (context, position) => _preview(
                                         result,
-                                        position.data?.position ??
-                                            Duration.zero,
+                                        position.data ?? Duration.zero,
                                         synced: true,
                                       ),
                                     )
@@ -255,35 +256,75 @@ class _SpotifyLyricsCardState extends State<SpotifyLyricsCard> {
         ? lyrics.synced!.map((l) => l.text.isEmpty ? '•••' : l.text).toList()
         : lyrics.text.split('\n').where((l) => l.trim().isNotEmpty).toList();
     final start = math.max(0, active - 1);
+    final motion = synced && !MediaQuery.disableAnimationsOf(context)
+        ? const Duration(milliseconds: 240)
+        : Duration.zero;
+    final content = Column(
+      key: ValueKey(start),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (var i = start; i < math.min(lines.length, start + 3); i++)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 5),
+            child: synced && i == active
+                ? KaraokeLyricText(
+                    line: lyrics.synced![i],
+                    position: position,
+                    nextStart: i + 1 < lines.length
+                        ? lyrics.synced![i + 1].start
+                        : null,
+                    maxLines: 2,
+                    style: _previewStyle(Colors.white),
+                  )
+                : Text(
+                    lines[i],
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: _previewStyle(
+                      synced ? Colors.white54 : Colors.white,
+                    ),
+                  ),
+          ),
+      ],
+    );
     return AnimatedSize(
-      duration: MediaQuery.disableAnimationsOf(context)
-          ? Duration.zero
-          : const Duration(milliseconds: 250),
+      duration: motion,
       alignment: Alignment.topLeft,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          for (var i = start; i < math.min(lines.length, start + 3); i++)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 5),
-              child: Text(
-                lines[i],
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: !synced || active < 0 || i == active
-                      ? Colors.white
-                      : Colors.white60,
-                  fontSize: 21,
-                  fontWeight: FontWeight.w700,
-                  height: 1.4,
-                ),
-              ),
+      child: ClipRect(
+        child: AnimatedSwitcher(
+          duration: motion,
+          switchInCurve: Curves.easeOutCubic,
+          switchOutCurve: Curves.easeInCubic,
+          layoutBuilder: (current, previous) => Stack(
+            alignment: Alignment.topLeft,
+            children: [
+              for (final child in previous)
+                Positioned(left: 0, right: 0, top: 0, child: child),
+              if (current != null) current,
+            ],
+          ),
+          transitionBuilder: (child, animation) => FadeTransition(
+            opacity: animation,
+            child: SlideTransition(
+              position: Tween(
+                begin: const Offset(0, 0.08),
+                end: Offset.zero,
+              ).animate(animation),
+              child: child,
             ),
-        ],
+          ),
+          child: content,
+        ),
       ),
     );
   }
+
+  TextStyle _previewStyle(Color color) => TextStyle(
+    color: color,
+    fontSize: 21,
+    fontWeight: FontWeight.w700,
+    height: 1.4,
+  );
 }
 
 /// Subscribes to the current song so next/previous and automatic queue changes
@@ -309,9 +350,7 @@ class _FullScreenLyricsPageState extends State<_FullScreenLyricsPage> {
   bool _loading = false;
   int _request = 0;
   StreamSubscription<MediaItem?>? _mediaSubscription;
-  late final Stream<Duration> _positions = audioHandler.positionDataStream.map(
-    (p) => p.position,
-  );
+  late final Stream<Duration> _positions = audioHandler.lyricsPositionStream;
 
   @override
   void initState() {

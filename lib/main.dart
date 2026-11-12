@@ -8,9 +8,12 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:hive_ce_flutter/hive_flutter.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:receive_sharing_intent/receive_sharing_intent.dart';
 import 'package:vybe/extensions/l10n.dart';
 import 'package:vybe/localization/app_localizations.dart';
 import 'package:vybe/screens/local_sync_page.dart';
+import 'package:vybe/screens/startup_splash.dart';
 import 'package:vybe/services/audio_service.dart';
 import 'package:vybe/services/data_manager.dart';
 import 'package:vybe/services/io_service.dart';
@@ -28,8 +31,6 @@ import 'package:vybe/utilities/language_utils.dart';
 import 'package:vybe/utilities/platform_utils.dart';
 import 'package:vybe/utilities/playlist_utils.dart';
 import 'package:vybe/utilities/sharing_intent.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:receive_sharing_intent/receive_sharing_intent.dart';
 
 late VybeAudioHandler audioHandler;
 StreamSubscription<String?>? sharingIntentSubscription;
@@ -185,6 +186,9 @@ class _VybeState extends State<Vybe> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       unawaited(LocalSyncService.instance.syncOnResume());
+      if (kReleaseMode && !offlineMode.value && !isFdroidBuild) {
+        unawaited(fetchAnnouncementOnly());
+      }
     }
     super.didChangeAppLifecycleState(state);
     // Persist listening stats when the app leaves the foreground. This is the
@@ -264,11 +268,75 @@ class _VybeState extends State<Vybe> with WidgetsBindingObserver {
   }
 }
 
-void main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  await initialisation();
+  runApp(const _VybeStartup());
+}
 
-  runApp(const Vybe());
+class _VybeStartup extends StatefulWidget {
+  const _VybeStartup();
+
+  @override
+  State<_VybeStartup> createState() => _VybeStartupState();
+}
+
+class _VybeStartupState extends State<_VybeStartup> {
+  late final Future<void> _ready;
+
+  @override
+  void initState() {
+    super.initState();
+    _ready = _initialize();
+  }
+
+  Future<void> _initialize() async {
+    // Let Flutter present the splash before starting platform services.
+    final binding = WidgetsBinding.instance;
+    await binding.endOfFrame;
+    final reduceMotion =
+        PlatformDispatcher.instance.accessibilityFeatures.disableAnimations;
+    try {
+      await Future.wait<void>([
+        initialisation(),
+        if (!reduceMotion)
+          binding.waitUntilFirstFrameRasterized.then(
+            (_) => Future<void>.delayed(const Duration(milliseconds: 1900)),
+          ),
+      ], eagerError: true);
+    } catch (error, stackTrace) {
+      logger.log('Vybe could not start', error: error, stackTrace: stackTrace);
+      rethrow;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<void>(
+      future: _ready,
+      builder: (context, snapshot) {
+        final ready =
+            snapshot.connectionState == ConnectionState.done &&
+            !snapshot.hasError;
+        final reducedMotion =
+            PlatformDispatcher.instance.accessibilityFeatures.disableAnimations;
+        return AnimatedSwitcher(
+          duration: reducedMotion
+              ? Duration.zero
+              : const Duration(milliseconds: 280),
+          switchInCurve: Curves.easeOutCubic,
+          switchOutCurve: Curves.easeInCubic,
+          child: ready
+              ? const Vybe(key: ValueKey('ready'))
+              : MaterialApp(
+                  key: const ValueKey('opening'),
+                  debugShowCheckedModeBanner: false,
+                  theme: ThemeData.dark(),
+                  home: StartupSplash(failed: snapshot.hasError),
+                ),
+        );
+      },
+    );
+  }
 }
 
 Future<void> initialisation() async {

@@ -62,6 +62,10 @@ android {
             dimension = "flavor"
             applicationIdSuffix = ""
         }
+        create("companion") {
+            dimension = "flavor"
+            applicationIdSuffix = ".updated"
+        }
         create("fdroid") {
             dimension = "flavor"
             applicationIdSuffix = ".fdroid"

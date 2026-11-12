@@ -16,6 +16,7 @@ import 'package:vybe/services/common_services.dart';
 import 'package:vybe/services/lyrics/lyrics_models.dart';
 import 'package:vybe/services/settings_manager.dart';
 import 'package:vybe/utilities/artwork_provider.dart';
+import 'package:vybe/widgets/now_playing/spotify_bottom_row.dart';
 import 'package:vybe/widgets/now_playing/spotify_lyrics_card.dart';
 
 class TestAudioHandler extends Fake implements VybeAudioHandler {
@@ -36,6 +37,9 @@ class TestAudioHandler extends Fake implements VybeAudioHandler {
   @override
   Stream<PositionData> get positionDataStream => positions.stream;
   @override
+  Stream<Duration> get lyricsPositionStream =>
+      positions.map((value) => value.position);
+  @override
   PositionData get currentPositionData => positions.value;
   @override
   Future<void> seek(Duration position) async => positions.add(
@@ -45,7 +49,15 @@ class TestAudioHandler extends Fake implements VybeAudioHandler {
   Future<void> play() async => playbackState.add(PlaybackState(playing: true));
   @override
   Future<void> pause() async => playbackState.add(PlaybackState());
+  final _volume = BehaviorSubject<double>.seeded(0.75);
+  @override
+  double get volume => _volume.value;
+  @override
+  Stream<double> get volumeStream => _volume.stream;
+  @override
+  Future<void> setVolume(double value) async => _volume.add(value);
   Future<void> close() async {
+    await _volume.close();
     await mediaItem.close();
     await playbackState.close();
     await positions.close();
@@ -206,6 +218,28 @@ void main() {
       image.dispose();
     });
   }
+
+  testWidgets('player volume button adjusts the playback level', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: SpotifyBottomRow(metadata: first)),
+      ),
+    );
+    await tester.tap(find.byTooltip('Volume'));
+    await tester.pumpAndSettle();
+    expect(find.text('75%'), findsOneWidget);
+    final slider = find.byType(Slider);
+    final bounds = tester.getRect(slider);
+    await tester.tapAt(
+      Offset(bounds.left + bounds.width / 4, bounds.center.dy),
+    );
+    await tester.pumpAndSettle();
+    expect(handler.volume, lessThan(0.5));
+    expect(find.text('${(handler.volume * 100).round()}%'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
 
   testWidgets(
     'expanded lyrics follow queue changes and retain plain fallback',

@@ -168,4 +168,121 @@ void main() {
       throwsA(isA<SpotifyPlaylistUnavailable>()),
     );
   });
+  const exporter = 'https://export.example.org/spotify-playlist';
+
+  test(
+    'automatically parses a full CSV when Spotify exposes a preview',
+    () async {
+      final client = MockClient((request) async {
+        if (request.url.host == 'export.example.org') {
+          expect(request.url.toString(), '$exporter?id=$id');
+          expect(request.headers['accept'], 'text/csv');
+          expect(request.followRedirects, isFalse);
+          return http.Response.bytes(
+            utf8.encode(
+              '\uFEFFTrack Name,Artist Name(s)\r\n'
+              '"First, ""Live""","Singer, Guest"\r\n'
+              '"Second\nVerse",गायक\r\n'
+              'Third,Another Singer\r\n'
+              'Fourth,Fourth Singer\r\n',
+            ),
+            200,
+            headers: {
+              'content-type': 'text/csv; charset=utf-8',
+              'x-playlist-total': '4',
+            },
+          );
+        }
+        return request.url.path.startsWith('/embed')
+            ? embedResponse()
+            : pageResponse(total: 4);
+      });
+      final playlist = await loadSpotifyPlaylist(
+        'spotify:playlist:$id',
+        client: client,
+        exporterUrl: exporter,
+      );
+      expect(playlist.title, 'रात की Playlist');
+      expect(playlist.tracks.map((track) => track.title), [
+        'First, "Live"',
+        'Second\nVerse',
+        'Third',
+        'Fourth',
+      ]);
+      expect(playlist.tracks[1].artist, 'गायक');
+      expect(playlist.mayBeIncomplete, isFalse);
+    },
+  );
+
+  test(
+    'falls back to the preview when the exporter returns a web page',
+    () async {
+      final client = MockClient((request) async {
+        if (request.url.host == 'export.example.org') {
+          return http.Response(
+            '<html>Exporter UI</html>',
+            200,
+            headers: {'content-type': 'text/html'},
+          );
+        }
+        return request.url.path.startsWith('/embed')
+            ? embedResponse()
+            : pageResponse(total: 245);
+      });
+      final playlist = await loadSpotifyPlaylist(
+        'spotify:playlist:$id',
+        client: client,
+        exporterUrl: exporter,
+      );
+      expect(playlist.tracks, hasLength(2));
+      expect(playlist.totalEntries, 245);
+      expect(playlist.mayBeIncomplete, isTrue);
+    },
+  );
+
+  test(
+    'does not contact the exporter when Spotify gives the full list',
+    () async {
+      final client = MockClient((request) async {
+        expect(request.url.host, 'open.spotify.com');
+        return request.url.path.startsWith('/embed')
+            ? embedResponse()
+            : pageResponse(total: 3);
+      });
+      final playlist = await loadSpotifyPlaylist(
+        'spotify:playlist:$id',
+        client: client,
+        exporterUrl: exporter,
+      );
+      expect(playlist.mayBeIncomplete, isFalse);
+    },
+  );
+  test(
+    'keeps a provider-declared partial export marked as incomplete',
+    () async {
+      final client = MockClient((request) async {
+        if (request.url.host == 'export.example.org') {
+          return http.Response(
+            'Track Name,Artist Name(s)\r\nFirst,Singer\r\n',
+            200,
+            headers: {
+              'content-type': 'text/csv',
+              'x-playlist-name-encoded': Uri.encodeComponent('रात की Playlist'),
+              'x-playlist-total': '1',
+              'x-playlist-complete': 'false',
+            },
+          );
+        }
+        return http.Response('', 404);
+      });
+      final playlist = await loadSpotifyPlaylist(
+        'spotify:playlist:$id',
+        client: client,
+        exporterUrl: exporter,
+      );
+      expect(playlist.title, 'रात की Playlist');
+      expect(playlist.tracks.single.title, 'First');
+      expect(playlist.mayBeIncomplete, isTrue);
+    },
+  );
 }

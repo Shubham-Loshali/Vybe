@@ -5,6 +5,7 @@ import 'package:audio_service/audio_service.dart';
 import 'package:audio_session/audio_session.dart';
 import 'package:hive_ce/hive_ce.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:rxdart/rxdart.dart';
 import 'package:vybe/constants/clients.dart';
 import 'package:vybe/main.dart';
 import 'package:vybe/models/position_data.dart';
@@ -19,7 +20,6 @@ import 'package:vybe/utilities/media_duration.dart';
 import 'package:vybe/utilities/mediaitem.dart';
 import 'package:vybe/utilities/platform_utils.dart';
 import 'package:vybe/utilities/queue_entry_utils.dart';
-import 'package:rxdart/rxdart.dart';
 
 class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
   VybeAudioHandler() {
@@ -128,6 +128,12 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
       }).asBroadcastStream();
 
   Stream<PositionData> get positionDataStream => _positionDataStream;
+
+  late final Stream<Duration> lyricsPositionStream = audioPlayer
+      .createPositionStream(
+        minPeriod: const Duration(milliseconds: 85),
+        maxPeriod: const Duration(milliseconds: 85),
+      );
 
   Stream<double> get volumeStream => audioPlayer.volumeStream;
   double get volume => audioPlayer.volume;

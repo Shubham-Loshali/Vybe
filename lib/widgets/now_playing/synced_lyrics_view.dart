@@ -1,9 +1,9 @@
 import 'dart:async';
 import 'dart:math' as math;
-import 'dart:ui' as ui;
 
 import 'package:material_ui/material_ui.dart';
 import 'package:vybe/services/lyrics/lyrics_models.dart';
+import 'package:vybe/widgets/now_playing/karaoke_lyric_text.dart';
 
 /// Follows the playback clock without changing the height of wrapped lines.
 class SyncedLyricsView extends StatefulWidget {
@@ -29,16 +29,20 @@ class SyncedLyricsView extends StatefulWidget {
 }
 
 class _SyncedLyricsViewState extends State<SyncedLyricsView> {
+  static const _followAlignment = 0.20;
   static const _offsetStep = Duration(milliseconds: 500);
   static const _manualScrollPause = Duration(seconds: 4);
   final ScrollController _scrollController = ScrollController();
   StreamSubscription<Duration>? _positionSubscription;
   Timer? _resumeTimer;
   List<GlobalKey> _lineKeys = [];
+  final _lyricPosition = ValueNotifier(Duration.zero);
   Duration _position = Duration.zero;
   Duration _offset = Duration.zero;
   int _activeIndex = -1;
   bool _following = true;
+  bool _scrollScheduled = false;
+  bool _jumpToActive = false;
 
   List<LyricLine> get _lines => widget.lyrics.synced ?? const [];
 
@@ -52,10 +56,13 @@ class _SyncedLyricsViewState extends State<SyncedLyricsView> {
   void _listen() {
     _positionSubscription = widget.positionStream.listen((position) {
       _position = position;
-      final index = widget.lyrics.lineIndexAt(position + _offset);
-      if (!mounted || index == _activeIndex) return;
+      if (!mounted) return;
+      _lyricPosition.value = position + _offset;
+      final index = widget.lyrics.lineIndexAt(_lyricPosition.value);
+      if (index == _activeIndex) return;
+      final nearby = (_activeIndex - index).abs() <= 5;
       setState(() => _activeIndex = index);
-      _scrollToActive();
+      _scrollToActive(animate: nearby);
     });
   }
 
@@ -64,6 +71,7 @@ class _SyncedLyricsViewState extends State<SyncedLyricsView> {
     _lineKeys = List.generate(_lines.length, (_) => GlobalKey());
     _position = widget.initialPosition;
     _offset = Duration.zero;
+    _lyricPosition.value = _position;
     _following = true;
     _activeIndex = widget.lyrics.lineIndexAt(_position);
     _scrollToActive(animate: false);
@@ -84,24 +92,35 @@ class _SyncedLyricsViewState extends State<SyncedLyricsView> {
     _resumeTimer?.cancel();
     unawaited(_positionSubscription?.cancel());
     _scrollController.dispose();
+    _lyricPosition.dispose();
     super.dispose();
   }
 
   void _scrollToActive({bool animate = true}) {
+    _jumpToActive |= !animate;
+    if (_scrollScheduled) return;
+    _scrollScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !_following || _lineKeys.isEmpty) return;
+      _scrollScheduled = false;
+      final jump = _jumpToActive;
+      _jumpToActive = false;
+      if (!mounted ||
+          !_following ||
+          !_scrollController.hasClients ||
+          _lineKeys.isEmpty)
+        return;
       final index = math.max(0, _activeIndex);
       if (index >= _lineKeys.length) return;
-      final lineContext = _lineKeys[index].currentContext;
-      if (lineContext == null) return;
+      final line = _lineKeys[index].currentContext?.findRenderObject();
+      if (line == null) return;
       unawaited(
-        Scrollable.ensureVisible(
-          lineContext,
-          alignment: 0.32,
-          duration: animate && !MediaQuery.disableAnimationsOf(context)
-              ? const Duration(milliseconds: 480)
-              : Duration.zero,
-          curve: Curves.easeOutCubic,
+        _scrollController.position.ensureVisible(
+          line,
+          alignment: _followAlignment,
+          duration: jump || MediaQuery.disableAnimationsOf(context)
+              ? Duration.zero
+              : const Duration(milliseconds: 510),
+          curve: Curves.easeOutQuart,
         ),
       );
     });
@@ -116,7 +135,8 @@ class _SyncedLyricsViewState extends State<SyncedLyricsView> {
   void _changeOffset(Duration? delta) {
     setState(() {
       _offset = delta == null ? Duration.zero : _offset + delta;
-      _activeIndex = widget.lyrics.lineIndexAt(_position + _offset);
+      _lyricPosition.value = _position + _offset;
+      _activeIndex = widget.lyrics.lineIndexAt(_lyricPosition.value);
     });
     _resumeFollowing();
   }
@@ -147,7 +167,7 @@ class _SyncedLyricsViewState extends State<SyncedLyricsView> {
             },
             child: LayoutBuilder(
               builder: (context, constraints) {
-                final edgePadding = constraints.maxHeight * 0.32;
+                final edgePadding = constraints.maxHeight * _followAlignment;
                 return ShaderMask(
                   shaderCallback: (bounds) => const LinearGradient(
                     begin: Alignment.topCenter,
@@ -206,7 +226,7 @@ class _SyncedLyricsViewState extends State<SyncedLyricsView> {
 
   Widget _buildLine(int index) {
     final isActive = index == _activeIndex;
-    final distance = _activeIndex < 0 ? 0 : (index - _activeIndex).abs();
+    final distance = (index - _activeIndex).abs();
     final color = widget.foregroundColor;
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
     final duration = reduceMotion
@@ -222,41 +242,34 @@ class _SyncedLyricsViewState extends State<SyncedLyricsView> {
         key: _lineKeys[index],
         behavior: HitTestBehavior.opaque,
         onTap: () => _seekToLine(_lines[index]),
-        child: AnimatedContainer(
-          duration: duration,
-          margin: const EdgeInsets.symmetric(vertical: 3),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-          decoration: BoxDecoration(
-            color: color.withValues(alpha: isActive ? 0.1 : 0),
-            borderRadius: BorderRadius.circular(18),
-          ),
-          child: ImageFiltered(
-            enabled: distance > 1 && !reduceMotion,
-            imageFilter: ui.ImageFilter.blur(sigmaX: 0.6, sigmaY: 0.6),
-            child: AnimatedDefaultTextStyle(
-              duration: duration,
-              style: TextStyle(
-                fontFamily: Theme.of(context).textTheme.bodyLarge?.fontFamily,
-                fontSize: widget.fontSize,
-                height: 1.45,
-                fontWeight: FontWeight.w700,
-                letterSpacing: -0.5,
-                color: color.withValues(
-                  alpha: isActive ? 1 : (distance <= 1 ? 0.65 : 0.48),
-                ),
-                shadows: isActive
-                    ? [
-                        Shadow(
-                          color: color.withValues(alpha: 0.35),
-                          blurRadius: 18,
-                        ),
-                      ]
-                    : [],
-              ),
-              child: Text(
-                _lines[index].text.isEmpty ? '•••' : _lines[index].text,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: AnimatedDefaultTextStyle(
+            duration: duration,
+            curve: Curves.easeOutCubic,
+            style: TextStyle(
+              fontFamily: Theme.of(context).textTheme.bodyLarge?.fontFamily,
+              fontSize: widget.fontSize,
+              height: 1.45,
+              fontWeight: FontWeight.w700,
+              letterSpacing: -0.5,
+              color: color.withValues(
+                alpha: isActive ? 1 : (distance <= 1 ? 0.51 : 0.36),
               ),
             ),
+            child: isActive
+                ? ValueListenableBuilder<Duration>(
+                    valueListenable: _lyricPosition,
+                    builder: (context, position, _) => KaraokeLyricText(
+                      line: _lines[index],
+                      position: position,
+                      nextStart: index + 1 < _lines.length
+                          ? _lines[index + 1].start
+                          : null,
+                      style: TextStyle(color: color),
+                    ),
+                  )
+                : Text(_lines[index].text.isEmpty ? '•••' : _lines[index].text),
           ),
         ),
       ),

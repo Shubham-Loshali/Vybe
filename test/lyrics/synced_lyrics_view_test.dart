@@ -62,6 +62,55 @@ void main() {
       .style
       .color;
 
+  testWidgets('moves the glow between words before advancing the line', (
+    tester,
+  ) async {
+    const lyrics = Lyrics(
+      source: 'fixture',
+      synced: [
+        LyricLine(
+          Duration.zero,
+          'First second third',
+          wordCues: [
+            (wordIndex: 0, start: Duration.zero),
+            (wordIndex: 1, start: Duration(milliseconds: 350)),
+            (wordIndex: 2, start: Duration(milliseconds: 900)),
+          ],
+        ),
+        LyricLine(Duration(seconds: 4), 'Next line'),
+      ],
+    );
+    await tester.pumpWidget(view(lyrics));
+    await tester.pumpAndSettle();
+    double brightness(String word) {
+      final text = tester.widget<Text>(find.text('First second third'));
+      return (text.textSpan as TextSpan).children!
+          .whereType<TextSpan>()
+          .singleWhere((span) => span.text == word)
+          .style!
+          .color!
+          .a;
+    }
+
+    final initial = brightness('First');
+    positions.add(const Duration(milliseconds: 240));
+    await tester.pump();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 45));
+    final midway = brightness('First');
+    expect(midway, greaterThan(initial));
+    await tester.pumpAndSettle();
+    expect(brightness('First'), greaterThan(midway));
+    expect(brightness('second'), closeTo(initial, 0.001));
+    positions.add(const Duration(milliseconds: 580));
+    await tester.pumpAndSettle();
+    expect(brightness('second'), greaterThan(initial));
+    expect(brightness('third'), closeTo(initial, 0.001));
+    positions.add(const Duration(milliseconds: 100));
+    await tester.pumpAndSettle();
+    expect(brightness('second'), closeTo(initial, 0.001));
+  });
+
   testWidgets('opens at the current line even when playback is paused', (
     tester,
   ) async {

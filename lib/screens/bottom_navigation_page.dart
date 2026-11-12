@@ -6,6 +6,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:vybe/constants/app_constants.dart';
 import 'package:vybe/extensions/l10n.dart';
 import 'package:vybe/main.dart';
+import 'package:vybe/services/router_service.dart';
 import 'package:vybe/services/settings_manager.dart';
 import 'package:vybe/services/update_manager.dart';
 import 'package:vybe/utilities/flutter_bottom_sheet.dart'
@@ -86,7 +87,7 @@ class _BottomNavigationPageState extends State<BottomNavigationPage> {
                                 ),
                               )
                               .toList(),
-                          selectedIndex: _getCurrentIndex(items, isOfflineMode),
+                          selectedIndex: _getCurrentIndex(items),
                           onDestinationSelected: (index) =>
                               _onTabTapped(index, items),
                         ),
@@ -139,7 +140,7 @@ class _BottomNavigationPageState extends State<BottomNavigationPage> {
                         ),
                         child: NavigationBar(
                         backgroundColor: Colors.transparent,
-                        selectedIndex: _getCurrentIndex(items, isOfflineMode),
+                        selectedIndex: _getCurrentIndex(items),
                         labelBehavior:
                             NavigationDestinationLabelBehavior.alwaysShow,
                         onDestinationSelected: (index) =>
@@ -188,14 +189,24 @@ class _BottomNavigationPageState extends State<BottomNavigationPage> {
       );
     }
 
-    items.addAll([
+    items.add(
       _NavigationItem(
         icon: FluentIcons.library_24_regular,
         selectedIcon: FluentIcons.library_24_filled,
         label: yourLibraryLabel(context.l10n?.library ?? 'Library'),
         shellIndex: 2,
       ),
-    ]);
+    );
+    if (!isOfflineMode) {
+      items.add(
+        _NavigationItem(
+          icon: FluentIcons.arrow_download_24_regular,
+          selectedIcon: FluentIcons.arrow_download_24_filled,
+          label: context.l10n?.importTab ?? 'Import',
+          shellIndex: NavigationManager.importBranchIndex,
+        ),
+      );
+    }
 
     return items;
   }
@@ -205,9 +216,9 @@ class _BottomNavigationPageState extends State<BottomNavigationPage> {
 
     final currentRoute = GoRouterState.of(context).matchedLocation;
 
-    // If we're switching to offline mode and currently on search tab
-    if (isOfflineMode && currentRoute.startsWith('/search')) {
-      // Navigate to home
+    if (isOfflineMode &&
+        (currentRoute.startsWith(NavigationManager.searchPath) ||
+            currentRoute == NavigationManager.importPath)) {
       widget.child.goBranch(0);
     }
   }
@@ -232,7 +243,7 @@ class _BottomNavigationPageState extends State<BottomNavigationPage> {
     }
   }
 
-  int _getCurrentIndex(List<_NavigationItem> items, bool isOfflineMode) {
+  int _getCurrentIndex(List<_NavigationItem> items) {
     final currentShellIndex = widget.child.currentIndex;
 
     if (items.isEmpty) return 0;
@@ -243,11 +254,7 @@ class _BottomNavigationPageState extends State<BottomNavigationPage> {
     );
     if (matchedIndex != -1) return matchedIndex;
 
-    // If the Search branch (1) is active but Search is hidden in offline mode,
-    // fall back to the Home tab.
-    if (isOfflineMode && currentShellIndex == 1) return 0;
-
-    // Final fallback: return the first tab to keep UI in a valid state.
+    // Fall back to Home when the active branch has no visible tab.
     return 0;
   }
 }

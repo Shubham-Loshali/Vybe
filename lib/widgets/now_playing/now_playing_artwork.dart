@@ -183,9 +183,7 @@ class _LyricsViewState extends State<_LyricsView> {
             if (lyrics.isSynced && syncedEnabled) {
               return SyncedLyricsView(
                 lyrics: lyrics,
-                positionStream: audioHandler.positionDataStream.map(
-                  (p) => p.position,
-                ),
+                positionStream: audioHandler.lyricsPositionStream,
                 initialPosition: audioHandler.currentPositionData.position,
                 onSeek: (position) => unawaited(audioHandler.seek(position)),
                 foregroundColor: colorScheme.onSecondaryContainer,
