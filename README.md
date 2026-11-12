@@ -28,7 +28,7 @@
   <img src="https://img.shields.io/badge/Platform-Android-brightgreen?style=flat-square&logo=android" />
   <img src="https://img.shields.io/badge/Built%20With-Flutter-blue?style=flat-square&logo=flutter" />
   <img src="https://img.shields.io/badge/License-GPL--3.0-orange?style=flat-square" />
-  <img src="https://img.shields.io/badge/Version-10.6.0-purple?style=flat-square" />
+  <img src="https://img.shields.io/badge/Version-10.6.2-purple?style=flat-square" />
 </p>
 
 ---
