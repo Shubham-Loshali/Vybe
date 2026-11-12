@@ -200,6 +200,7 @@ class _ArtistPageState extends State<ArtistPage> {
                 artwork: PlaylistHeroArtwork(
                   _artist!,
                   cubeIcon: FluentIcons.person_24_filled,
+                  isArtist: true,
                 ),
               ),
               SliverToBoxAdapter(child: _buildHeaderSection()),
@@ -295,31 +296,6 @@ class _ArtistPageState extends State<ArtistPage> {
           description: _artist!['description']?.toString(),
         ),
         _buildPlaybackButtons(),
-        const SizedBox(height: 12),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          spacing: 5,
-          children: [
-            PlaylistLikeButton(
-              playlistId: _resolvedArtistId,
-              playlistData: () => artistPlaylistData(_artist!, songs: const []),
-            ),
-            PlaylistAddToPlaylistButton(resolvePlaylist: _loadCatalog),
-            // Downloading artist = downloading all its songs
-            PlaylistDownloadButton(
-              playlistId: _resolvedArtistId,
-              resolvePlaylist: _loadCatalog,
-              songs: _catalog?['list'] as List?,
-              requireSnapshotMatch: true,
-            ),
-            IconButton.filledTonal(
-              icon: const Icon(FluentIcons.arrow_sync_24_filled),
-              iconSize: 24,
-              onPressed: _refresh,
-              tooltip: context.l10n!.update,
-            ),
-          ],
-        ),
       ],
     );
   }
@@ -330,6 +306,26 @@ class _ArtistPageState extends State<ArtistPage> {
       valueListenable: _isLoadingCatalog,
       builder: (_, isLoading, __) => PlaylistActionButtons(
         isLoading: isLoading,
+        leading: [
+          PlaylistLikeButton(
+            playlistId: _resolvedArtistId,
+            playlistData: () => artistPlaylistData(_artist!, songs: const []),
+          ),
+          // Downloading artist = downloading all its songs
+          PlaylistDownloadButton(
+            playlistId: _resolvedArtistId,
+            resolvePlaylist: _loadCatalog,
+            songs: _catalog?['list'] as List?,
+            requireSnapshotMatch: true,
+          ),
+          PlaylistAddToPlaylistButton(resolvePlaylist: _loadCatalog),
+          IconButton(
+            icon: const Icon(FluentIcons.arrow_sync_24_filled),
+            iconSize: 24,
+            onPressed: _refresh,
+            tooltip: context.l10n!.update,
+          ),
+        ],
         onPlay: _playArtist,
         onShuffle: () => _playArtist(shuffle: true),
       ),

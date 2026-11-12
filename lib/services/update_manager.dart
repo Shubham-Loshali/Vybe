@@ -72,7 +72,6 @@ Future<void> checkAppUpdates() async {
   try {
     final map = await _fetchUpdateConfig();
     if (map == null) return;
-    announcementURL.value = map['announcementurl'];
     final latestVersion = map['version']?.toString() ?? '';
     final forceShutdown = map['force_shutdown'] == true;
 
@@ -340,19 +339,12 @@ Future<String> getDownloadUrl(Map<String, dynamic> map) async {
   return url;
 }
 
-/// Fetch only the announcement URL from the `check.json` file and set the
-/// global `announcementURL` ValueNotifier. This does not trigger releases
-/// fetching or any update dialogs/downloads and is safe to call for F‑Droid
-/// builds where update prompts are not allowed.
+/// Check for forced updates or updates safe to call for F‑Droid
+/// builds where direct update download prompts are not allowed.
 Future<void> fetchAnnouncementOnly() async {
   try {
     final map = await _fetchUpdateConfig();
     if (map == null) return;
-
-    final ann = map['announcementurl'];
-    if (ann != null) {
-      announcementURL.value = ann.toString();
-    }
 
     final latestVersion = map['version']?.toString();
     final forceShutdown = map['force_shutdown'] == true;

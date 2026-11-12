@@ -25,13 +25,13 @@ class ArtistBar extends StatelessWidget {
     final image = normalizeArtistThumbnailUrl(artist['image']?.toString());
 
     return Material(
-      color: colorScheme.surfaceContainerLow,
+      color: Colors.transparent,
       borderRadius: borderRadius,
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
+          padding: const EdgeInsets.symmetric(vertical: 8),
           child: Row(
             children: [
               _ArtistArtwork(image: image),

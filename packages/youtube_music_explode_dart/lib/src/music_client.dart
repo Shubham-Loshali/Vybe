@@ -222,8 +222,23 @@ class MusicClient {
     String? expectedArtist,
     String? expectedTitle,
   }) async {
+    for (final video in await searchSongs(query)) {
+      if (expectedArtist != null &&
+          !_looselyMatch(video.author, expectedArtist)) {
+        continue;
+      }
+      if (expectedTitle != null && !_looselyMatch(video.title, expectedTitle)) {
+        continue;
+      }
+      return video;
+    }
+    return null;
+  }
+
+  /// Searches the YouTube Music Songs shelf in catalog order.
+  Future<List<Video>> searchSongs(String query) async {
     final normalizedQuery = query.trim();
-    if (normalizedQuery.isEmpty) return null;
+    if (normalizedQuery.isEmpty) return [];
 
     final root = await _httpClient.sendPost('search', {
       'context': _remixContext,
@@ -231,36 +246,24 @@ class MusicClient {
       'params': _songsSearchParams,
     }, validate: true);
 
-    final isValidating = expectedArtist != null || expectedTitle != null;
-    Video? fallback;
+    final songs = <Video>[];
+    final seen = <String>{};
     for (final item in _findRenderers(
       root,
       'musicResponsiveListItemRenderer',
     )) {
       final videoId = _trackVideoId(item);
-      if (videoId == null) continue;
-
       final title = _flexColumnText(item, 0);
-      if (title == null || title.isEmpty) continue;
-
-      final subtitleParts = _splitBullets(_flexColumnText(item, 1));
-      final artist = subtitleParts.isNotEmpty ? subtitleParts.first : '';
-
-      final video = _trackVideo(item, videoId, title, artist, null);
-      fallback ??= video;
-
-      if (expectedArtist != null && !_looselyMatch(artist, expectedArtist)) {
-        continue;
+      final credits = _splitBullets(_flexColumnText(item, 1));
+      if (videoId == null || title == null || credits.isEmpty) continue;
+      final artist = credits.first == 'Song' && credits.length > 1
+          ? credits[1]
+          : credits.first;
+      if (seen.add(videoId)) {
+        songs.add(_trackVideo(item, videoId, title, artist, null));
       }
-      if (expectedTitle != null && !_looselyMatch(title, expectedTitle)) {
-        continue;
-      }
-
-      return video;
     }
-
-    // Only use the first result when no expected values were provided.
-    return isValidating ? null : fallback;
+    return songs;
   }
 
   /// Splits a `Song • Artist • Album` style subtitle line on its bullet
@@ -513,7 +516,8 @@ class MusicClient {
       null,
       null,
       '',
-      _parseDuration(_fixedColumnText(item)),
+      _parseDuration(_fixedColumnText(item)) ??
+          _parseDuration(_splitBullets(_flexColumnText(item, 1)).lastOrNull),
       ThumbnailSet(videoId),
       null,
       const Engagement(0, null, null),
@@ -638,14 +642,15 @@ class MusicClient {
   }
 
   String? _trackVideoId(_JsonMap item) {
-    return item
-        .getMap('overlay')
-        ?.getMap('musicItemThumbnailOverlayRenderer')
-        ?.getMap('content')
-        ?.getMap('musicPlayButtonRenderer')
-        ?.getMap('playNavigationEndpoint')
-        ?.getMap('watchEndpoint')
-        ?.getValue<String>('videoId');
+    return item.getMap('playlistItemData')?.getValue<String>('videoId') ??
+        item
+            .getMap('overlay')
+            ?.getMap('musicItemThumbnailOverlayRenderer')
+            ?.getMap('content')
+            ?.getMap('musicPlayButtonRenderer')
+            ?.getMap('playNavigationEndpoint')
+            ?.getMap('watchEndpoint')
+            ?.getValue<String>('videoId');
   }
 
   String? _flexColumnText(_JsonMap item, int index) {

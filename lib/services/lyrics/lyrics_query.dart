@@ -33,6 +33,34 @@ String cleanTitle(String input) {
   t = t.replaceAll(_noisyBrackets, '');
   t = t.replaceAll(_remasterSuffix, '');
   t = t.replaceAll(_trailingFeat, '');
+  // Upload headings often continue after these words with a movie, cast and
+  // composer. Searching that entire headline produces no database matches.
+  final promotion = RegExp(
+    r'\s+(?:(?:full|official)\s+)?(?:music\s+)?'
+    r'(?:video|audio|lyrical|lyrics)\s+(?:song\b|video\b)|'
+    r'\s+(?:full\s+song|official\s+(?:video|audio))\b',
+    caseSensitive: false,
+  ).firstMatch(t);
+  if (promotion != null && promotion.start > 0) {
+    t = t.substring(0, promotion.start);
+  }
+  t = t.replaceAll(
+    RegExp(r'\s*[\(\[]\s*from\s+[^\)\]]+[\)\]]', caseSensitive: false),
+    '',
+  );
+  // The app's display formatter can remove the brackets before this lookup.
+  t = t.replaceAll(
+    RegExp(r'\s+from\s+["“][^"”]+["”]\s*$', caseSensitive: false),
+    '',
+  );
+  t = t.replaceAll(
+    RegExp(
+      r'\s*[-:]?\s*\b(?:full\s+)?(?:official\s+)?(?:music\s+)?'
+      r'(?:video|audio|lyrical|lyrics)\s*(?:song)?\s*$',
+      caseSensitive: false,
+    ),
+    '',
+  );
 
   final stripped = t.replaceAll(_trailingKeyword, '').trim();
   if (stripped.isNotEmpty) t = stripped;
@@ -48,6 +76,11 @@ String cleanArtist(String input) {
   a = a.replaceAll(RegExp(r'\s*-\s*topic\s*$', caseSensitive: false), '');
   a = a.replaceAll(RegExp(r'\s*vevo\s*$', caseSensitive: false), '');
   a = a.replaceAll(_trailingFeat, '');
+  if (RegExp(
+    r'^(unknown(?: artist)?|various artists?|n/a)$',
+    caseSensitive: false,
+  ).hasMatch(a.trim()))
+    return '';
   return a.trim();
 }
 
@@ -125,25 +158,34 @@ List<TrackInfo> buildSearchVariants(TrackInfo track, {int maxVariants = 6}) {
   void add(String a, String t) {
     a = a.trim();
     t = t.trim();
-    if (a.isEmpty || t.isEmpty) return;
+    if (t.isEmpty) return;
     final key = '${foldDiacritics(a)}|${foldDiacritics(t)}';
     if (seen.add(key)) result.add(track.copyWith(artist: a, title: t));
   }
 
+  // Keep the supplied metadata first; a dash is often part of a song title.
+  add(artist, title);
   final parts = title.split(_dashSeparator);
   final hasDash = parts.length >= 2;
   if (hasDash) {
     final left = parts.first.trim();
     final right = parts.sublist(1).join(' - ').trim();
+    if (foldDiacritics(left) == foldDiacritics(artist)) add(artist, right);
+    if (foldDiacritics(right) == foldDiacritics(artist)) add(artist, left);
     add(left, right);
     add(artist, right);
-    add(artist, title);
     add(right, left);
   } else {
-    add(artist, title);
-    if (track.artist.isNotEmpty && track.artist != artist) {
-      add(track.artist, title);
+    for (final collaborator in track.artist.split(RegExp('[,;&/]'))) {
+      add(cleanArtist(collaborator), title);
     }
+  }
+
+  // Movie/upload prefixes such as "TUM BIN 2: DEKH LENA" are not part of the
+  // song title. Keep the full spelling too, since colons can be intentional.
+  final colon = title.indexOf(':');
+  if (colon > 0 && colon < title.length - 1) {
+    add(artist, cleanTitle(title.substring(colon + 1)));
   }
 
   return result.take(maxVariants).toList();

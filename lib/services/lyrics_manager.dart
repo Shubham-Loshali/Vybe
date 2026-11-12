@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:collection';
 import 'dart:convert';
 import 'dart:developer' as developer;
@@ -7,8 +8,11 @@ import 'package:http/http.dart' as http;
 import 'package:vybe/services/lyrics/lrc_parser.dart';
 import 'package:vybe/services/lyrics/lyrics_models.dart';
 import 'package:vybe/services/lyrics/lyrics_query.dart';
+import 'package:vybe/services/lyrics/youtube_music_lyrics.dart';
 
 export 'package:vybe/services/lyrics/lyrics_models.dart';
+
+const _plainMatchToleranceSeconds = 35;
 
 class _CacheEntry {
   _CacheEntry(this.value) : storedAt = DateTime.now();
@@ -18,26 +22,33 @@ class _CacheEntry {
 
 /// Fetches lyrics from several sources.
 ///
-/// Order: LRCLIB (synced + plain, open API) first, then the plain-text
-/// fallbacks lyrics.ovh, paroles.net and lyricsmania.com, which are queried
-/// concurrently and consumed in priority order.
+/// Prefers verified timed lyrics, then falls back to plain text. Requests to
+/// LRCLIB are serialized and throttled, with a bounded search budget.
 class LyricsManager {
-  LyricsManager({this._client});
+  LyricsManager({this.client});
 
-  final http.Client? _client;
+  final http.Client? client;
 
-  static const _timeout = Duration(seconds: 8);
-  static const _userAgent = 'Vybe (https://github.com/Shubham-Loshali/Vybe)';
+  static const _timeout = Duration(seconds: 4);
+  static const _searchBudget = Duration(seconds: 12);
+  static const _userAgent =
+      'Vybe v10.6.2 (https://github.com/Shubham-Loshali/Vybe)';
   static const _maxCacheEntries = 50;
   static const _hitTtl = Duration(hours: 6);
-  static const _missTtl = Duration(minutes: 5);
+  static const _missTtl = Duration(seconds: 30);
 
   // Shared between instances: callers create a new LyricsManager per request.
   static final LinkedHashMap<String, _CacheEntry> _cache =
       LinkedHashMap<String, _CacheEntry>();
+  static final Map<String, Future<Lyrics?>> _inFlight = {};
+  static Future<void> _lrclibQueue = Future<void>.value();
+  static DateTime _nextLrclibRequest = DateTime.fromMillisecondsSinceEpoch(0);
+  static DateTime _lrclibBlockedUntil = DateTime.fromMillisecondsSinceEpoch(0);
 
   /// Clears the in-memory cache (mainly for tests).
-  static void clearCache() => _cache.clear();
+  static void clearCache() {
+    _cache.clear();
+  }
 
   /// Backwards compatible entry point: plain text with a source credit.
   Future<String?> fetchLyrics(
@@ -59,7 +70,10 @@ class LyricsManager {
   }
 
   /// Full result, including timestamps when the provider supplies them.
-  Future<Lyrics?> fetchLyricsResult(TrackInfo track) async {
+  Future<Lyrics?> fetchLyricsResult(
+    TrackInfo track, {
+    bool forceRefresh = false,
+  }) async {
     if (track.title.trim().isEmpty) {
       return null;
     }
@@ -79,94 +93,179 @@ class LyricsManager {
       }
     }
 
-    final cacheKey = _cacheKey(variants.first);
+    // Use the original metadata: inferred title/artist pairs can be ambiguous.
+    final cacheKey = _cacheKey(track);
+    final pending = _inFlight[cacheKey];
+    if (pending != null) return pending;
     final cached = _readCache(cacheKey);
-    if (cached != null) return cached.value;
+    if (!forceRefresh && cached != null) return cached.value;
 
-    final result = await _search(variants);
-    _writeCache(cacheKey, result);
-    return result;
+    final search = _search(track, variants);
+    _inFlight[cacheKey] = search;
+    try {
+      final result = await search;
+      _writeCache(cacheKey, result);
+      return result;
+    } finally {
+      unawaited(_inFlight.remove(cacheKey));
+    }
   }
 
-  Future<Lyrics?> _search(List<TrackInfo> variants) async {
-    for (final variant in variants.take(3)) {
-      final lrclib = await _fetchFromLrclib(variant);
-      if (lrclib != null) return lrclib;
+  Future<Lyrics?> _search(TrackInfo track, List<TrackInfo> variants) async {
+    final elapsed = Stopwatch()..start();
+    final youtubeLookup = YouTubeMusicLyrics(client: client).lookup(track);
+    final candidates = <dynamic>[];
+    Lyrics? plain;
+    final requests = <Uri>[];
+    final first = variants.first;
+    if (first.artist.isNotEmpty) {
+      candidates.addAll(
+        await _fetchLrclibRecords(
+          Uri.https('lrclib.net', '/api/get', {
+            'track_name': first.title,
+            'artist_name': first.artist,
+            if (first.album?.trim().isNotEmpty ?? false)
+              'album_name': first.album,
+            if (first.duration != null &&
+                first.duration!.inSeconds > 0 &&
+                first.duration!.inSeconds <= 3600)
+              'duration': '${first.duration!.inSeconds}',
+          }),
+          elapsed,
+        ),
+      );
+      final exact = selectBestLrclibMatch(candidates, first);
+      if (exact != null) {
+        plain = _lyricsFromRecord(exact, first);
+        if (plain?.isSynced == true) return plain;
+      }
     }
 
-    for (final variant in variants.take(2)) {
-      // Start every scraper at once, then consume in priority order so the
-      // worst case is one timeout instead of the sum of all of them.
-      final pending = <Future<Lyrics?>>[
+    final youtube = await youtubeLookup;
+    if (youtube?.track case final canonical?) {
+      // Canonical metadata from the requested video takes priority over an
+      // upload title such as "Sitaare Ikkis Agastya Nanda ...".
+      variants = [...buildSearchVariants(canonical), ...variants];
+    }
+    plain ??= youtube?.lyrics;
+
+    // Broad title searches recover label-channel metadata and collaborations.
+    // They also run when a structured search returned unrelated candidates.
+    // Try a title-only search immediately, before spending the budget on every
+    // collaborator. A channel name can be unrelated to the credited singer.
+    for (final variant in variants.take(3)) {
+      requests
+        ..add(
+          Uri.https('lrclib.net', '/api/search', {
+            'track_name': variant.title,
+            if (variant.artist.isNotEmpty) 'artist_name': variant.artist,
+          }),
+        )
+        ..add(
+          Uri.https('lrclib.net', '/api/search', {'track_name': variant.title}),
+        );
+    }
+    for (final uri in requests.toSet()) {
+      if (elapsed.elapsed >= _searchBudget) break;
+      candidates.addAll(await _fetchLrclibRecords(uri, elapsed));
+      for (final variant in variants) {
+        final best = selectBestLrclibMatch(candidates, variant);
+        if (best == null) continue;
+        final result = _lyricsFromRecord(best, variant);
+        if (result == null) continue;
+        if (result.isSynced) return result;
+        plain ??= result;
+      }
+    }
+    if (plain != null) return plain;
+
+    for (final variant in variants.take(3)) {
+      if (variant.artist.isEmpty) continue;
+      // Return the first usable fallback instead of waiting for a slow source
+      // ahead of a source that has already succeeded.
+      final result = await _firstAvailable([
         _fetchFromLyricsOvh(variant),
         _fetchFromParolesNet(variant),
         _fetchFromLyricsMania(variant),
-      ];
-      for (final future in pending) {
-        final lyrics = await future;
-        if (lyrics != null) return lyrics;
-      }
+      ]);
+      if (result != null) return result;
     }
     return null;
   }
 
-  // ---------------------------------------------------------------- LRCLIB
-
-  Future<Lyrics?> _fetchFromLrclib(TrackInfo track) async {
-    try {
-      final uri = Uri.https('lrclib.net', '/api/search', {
-        'track_name': track.title,
-        'artist_name': track.artist,
-      });
-      var response = await _get(uri);
-      dynamic data = response.statusCode == 200
-          ? jsonDecode(utf8.decode(response.bodyBytes, allowMalformed: true))
-          : null;
-
-      if (data is! List || data.isEmpty) {
-        final queryUri = Uri.https('lrclib.net', '/api/search', {
-          'q': '${track.artist} ${track.title}'.trim(),
-        });
-        response = await _get(queryUri);
-        if (response.statusCode == 200) {
-          data = jsonDecode(utf8.decode(response.bodyBytes, allowMalformed: true));
-        }
-      }
-
-      if (data is! List || data.isEmpty) {
-        final titleUri = Uri.https('lrclib.net', '/api/search', {
-          'q': track.title.trim(),
-        });
-        response = await _get(titleUri);
-        if (response.statusCode == 200) {
-          data = jsonDecode(utf8.decode(response.bodyBytes, allowMalformed: true));
-        }
-      }
-
-      if (data is! List || data.isEmpty) return null;
-
-      final best = selectBestLrclibMatch(data, track);
-      if (best == null) return null;
-
-      final syncedRaw = best['syncedLyrics'];
-      final plainRaw = best['plainLyrics'];
-      final synced = syncedRaw is String && syncedRaw.trim().isNotEmpty
-          ? parseLrc(syncedRaw)
-          : null;
-      final plain = plainRaw is String && plainRaw.trim().isNotEmpty
-          ? plainRaw
-          : null;
-
-      final lyrics = Lyrics(
-        source: 'lrclib.net',
-        plain: plain,
-        synced: synced != null && synced.isNotEmpty ? synced : null,
+  Future<Lyrics?> _firstAvailable(List<Future<Lyrics?>> requests) {
+    final completer = Completer<Lyrics?>();
+    var remaining = requests.length;
+    for (final request in requests) {
+      unawaited(
+        request.catchError((Object _) => null).then((result) {
+          if (result != null && !completer.isCompleted)
+            completer.complete(result);
+          remaining--;
+          if (remaining == 0 && !completer.isCompleted)
+            completer.complete(null);
+        }),
       );
-      return lyrics.isEmpty ? null : lyrics;
+    }
+    return completer.future;
+  }
+
+  Future<List<dynamic>> _fetchLrclibRecords(Uri uri, Stopwatch elapsed) async {
+    final previous = _lrclibQueue;
+    final done = Completer<void>();
+    _lrclibQueue = done.future;
+    try {
+      await previous;
+      if (elapsed.elapsed >= _searchBudget ||
+          DateTime.now().isBefore(_lrclibBlockedUntil))
+        return [];
+      final wait = _nextLrclibRequest.difference(DateTime.now());
+      if (!wait.isNegative) await Future<void>.delayed(wait);
+      if (elapsed.elapsed >= _searchBudget) return [];
+      final response = await _get(uri);
+      if (response.statusCode == 429 || response.statusCode == 503) {
+        final seconds =
+            int.tryParse(response.headers['retry-after'] ?? '') ?? 60;
+        _lrclibBlockedUntil = DateTime.now().add(
+          Duration(seconds: seconds < 1 ? 1 : seconds),
+        );
+      }
+      if (response.statusCode != 200) return [];
+      final data = jsonDecode(
+        utf8.decode(response.bodyBytes, allowMalformed: true),
+      );
+      return data is List ? data : (data is Map<String, dynamic> ? [data] : []);
     } catch (e, st) {
       _logError('LRCLIB lookup failed', e, st);
-      return null;
+      return [];
+    } finally {
+      _nextLrclibRequest = DateTime.now().add(
+        const Duration(milliseconds: 200),
+      );
+      done.complete();
     }
+  }
+
+  Lyrics? _lyricsFromRecord(Map<String, dynamic> record, TrackInfo track) {
+    final raw = record['syncedLyrics'];
+    final lines = raw is String ? parseLrc(raw) : <LyricLine>[];
+    final seconds = record['duration'];
+    final durationMatches =
+        track.duration == null ||
+        track.duration == Duration.zero ||
+        seconds is! num ||
+        (seconds - track.duration!.inSeconds).abs() <= 15;
+    final result = Lyrics(
+      source: 'lrclib.net',
+      plain:
+          record['plainLyrics'] is String &&
+              (record['plainLyrics'] as String).trim().isNotEmpty
+          ? record['plainLyrics']
+          : lines.map((l) => l.text).join('\n'),
+      // A different cut can have useful words but incorrect timestamps.
+      synced: lines.isNotEmpty && durationMatches ? lines : null,
+    );
+    return result.isEmpty ? null : result;
   }
 
   // ------------------------------------------------------------ lyrics.ovh
@@ -254,13 +353,14 @@ class LyricsManager {
 
   // --------------------------------------------------------------- helpers
 
-  Future<http.Response> _get(Uri uri) {
+  Future<http.Response> _get(Uri uri) async {
     final headers = {'User-Agent': _userAgent};
-    final client = _client;
-    final request = client != null
-        ? client.get(uri, headers: headers)
-        : http.get(uri, headers: headers);
-    return request.timeout(_timeout);
+    final requestClient = client ?? http.Client();
+    try {
+      return await requestClient.get(uri, headers: headers).timeout(_timeout);
+    } finally {
+      if (client == null) requestClient.close();
+    }
   }
 
   void _logError(String message, Object error, StackTrace stackTrace) {
@@ -274,7 +374,8 @@ class LyricsManager {
 
   String _cacheKey(TrackInfo t) {
     final seconds = t.duration?.inSeconds ?? 0;
-    return '${foldDiacritics(t.artist)}|${foldDiacritics(t.title)}|$seconds';
+    return '${foldDiacritics(t.artist)}|${foldDiacritics(t.title)}|'
+        '${foldDiacritics(t.album ?? '')}|$seconds|${t.videoId ?? ''}';
   }
 
   _CacheEntry? _readCache(String key) {
@@ -316,25 +417,20 @@ Map<String, dynamic>? selectBestLrclibMatch(
 
   int textScore(String have, String want) {
     if (have.isEmpty || want.isEmpty) return 0;
+    String normalize(String value) => value
+        .replaceAll(RegExp(r'[^\p{L}\p{N}\s]', unicode: true), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+    have = normalize(have);
+    want = normalize(want);
     if (have == want) return 5;
-    if (have.contains(want) || want.contains(have)) return 3;
-    final haveWords = have
-        .split(RegExp(r'[\s,;&/_\-\(\)]+'))
-        .where((w) => w.length >= 2)
-        .toSet();
-    final wantWords = want
-        .split(RegExp(r'[\s,;&/_\-\(\)]+'))
-        .where((w) => w.length >= 2)
-        .toSet();
+    final haveWords = have.split(' ').where((w) => w.isNotEmpty).toSet();
+    final wantWords = want.split(' ').where((w) => w.isNotEmpty).toSet();
     if (haveWords.isNotEmpty && wantWords.isNotEmpty) {
       final common = haveWords.intersection(wantWords);
-      if (common.isNotEmpty) {
-        if (common.length == wantWords.length ||
-            common.length == haveWords.length) {
-          return 3;
-        }
-        return 2;
-      }
+      if (common.length / wantWords.length >= 0.75 &&
+          common.length / haveWords.length >= 0.75)
+        return 3;
     }
     return 0;
   }
@@ -372,13 +468,32 @@ Map<String, dynamic>? selectBestLrclibMatch(
       } else if (diff <= 5) {
         durationScore = 3;
         durationClose = true;
+      } else if (diff > _plainMatchToleranceSeconds) {
+        durationScore = -8;
       } else if (diff > 15) {
         durationScore = -5;
       }
     }
 
     // Title must at least roughly match
-    if (titleScore < 2) continue;
+    if (titleScore < 3) continue;
+
+    // Do not attach a live/remix/cover timeline to the studio recording.
+    final versionWords = RegExp(
+      r'\b(live|remix|cover|slowed|sped|acoustic|instrumental|karaoke)\b',
+      caseSensitive: false,
+    );
+    final wantedVersions = versionWords
+        .allMatches(track.title)
+        .map((m) => m.group(1)!.toLowerCase())
+        .toSet();
+    final candidateVersions = versionWords
+        .allMatches('${raw['trackName']}')
+        .map((m) => m.group(1)!.toLowerCase())
+        .toSet();
+    if (wantedVersions.difference(candidateVersions).isNotEmpty ||
+        candidateVersions.difference(wantedVersions).isNotEmpty)
+      continue;
 
     // If artist score is low and duration is not close:
     if (artistScore < 2 && !durationClose) {
@@ -386,14 +501,41 @@ Map<String, dynamic>? selectBestLrclibMatch(
       final isDurationAcceptable =
           seconds is num &&
           wantSeconds != null &&
-          (seconds - wantSeconds).abs() <= 12;
+          (seconds - wantSeconds).abs() <=
+              (wantArtist.isEmpty ? 12 : _plainMatchToleranceSeconds);
       // Accept if exact title match and duration is unknown or close enough
       if (titleScore < 4) continue;
+      // With weak artist evidence, a larger gap is only safe for an
+      // unambiguous title in the returned records.
+      if (seconds is num &&
+          wantSeconds != null &&
+          (seconds - wantSeconds).abs() > 12 &&
+          results.whereType<Map<String, dynamic>>().any(
+            (other) =>
+                other['instrumental'] != true &&
+                (other['plainLyrics'] is String ||
+                    other['syncedLyrics'] is String) &&
+                textScore(
+                      foldDiacritics(cleanTitle('${other['trackName']}')),
+                      wantTitle,
+                    ) ==
+                    5 &&
+                textScore(
+                      foldDiacritics(cleanArtist('${other['artistName']}')),
+                      foldDiacritics(cleanArtist('${raw['artistName']}')),
+                    ) ==
+                    0,
+          )) {
+        continue;
+      }
       if (!isDurationUnknown && !isDurationAcceptable) continue;
     }
 
     final score =
-        (titleScore * 2) + (artistScore * 2) + durationScore + (hasSynced ? 3 : 0);
+        (titleScore * 2) +
+        (artistScore * 2) +
+        durationScore +
+        (hasSynced ? 3 : 0);
     if (score > bestScore) {
       bestScore = score;
       best = raw;

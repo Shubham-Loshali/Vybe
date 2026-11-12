@@ -20,6 +20,7 @@ import 'package:vybe/widgets/confirmation_dialog.dart';
 import 'package:vybe/widgets/mini_player_bottom_space.dart';
 import 'package:vybe/widgets/playlist_bar.dart';
 import 'package:vybe/widgets/section_header.dart';
+import 'package:vybe/widgets/spotify_header.dart';
 
 class LibraryPage extends StatefulWidget {
   const LibraryPage({super.key});
@@ -29,6 +30,9 @@ class LibraryPage extends StatefulWidget {
 }
 
 class _LibraryPageState extends State<LibraryPage> {
+  /// 0 = everything, 1 = playlists, 2 = artists.
+  int _filter = 0;
+
   @override
   Widget build(BuildContext context) {
     // Show offline mode message if there is no content
@@ -93,7 +97,26 @@ class _LibraryPageState extends State<LibraryPage> {
     }
 
     return Scaffold(
-      appBar: AppBar(title: Text(context.l10n!.library)),
+      appBar: AppBar(
+        automaticallyImplyLeading: false,
+        titleSpacing: 16,
+        title: Text(
+          yourLibraryLabel(context.l10n!.library),
+          style: const TextStyle(
+            fontSize: 22,
+            fontWeight: FontWeight.w800,
+            letterSpacing: -0.4,
+          ),
+        ),
+        actions: [
+          if (!offlineMode.value)
+            IconButton(
+              icon: const Icon(FluentIcons.add_24_regular),
+              onPressed: () => showCreatePlaylistDialog(context),
+            ),
+          const SizedBox(width: 4),
+        ],
+      ),
       body: AnimatedBuilder(
         animation: Listenable.merge([
           pinnedPlaylistIds,
@@ -111,10 +134,25 @@ class _LibraryPageState extends State<LibraryPage> {
             padding: commonSingleChildScrollViewPadding,
             child: CustomScrollView(
               slivers: [
-                ..._buildPinnedSlivers(),
-                ..._buildUserPlaylistsSlivers(),
-                if (!offlineMode.value) ..._buildLikedPlaylistsSlivers(),
-                ..._buildLikedArtistsSlivers(),
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: 4, bottom: 4),
+                    child: FilterPills(
+                      labels: [
+                        'All',
+                        context.l10n!.playlists,
+                        context.l10n!.artists,
+                      ],
+                      selected: _filter,
+                      onSelected: (i) => setState(() => _filter = i),
+                    ),
+                  ),
+                ),
+                if (_filter != 2) ..._buildPinnedSlivers(),
+                if (_filter != 2) ..._buildUserPlaylistsSlivers(),
+                if (_filter != 2 && !offlineMode.value)
+                  ..._buildLikedPlaylistsSlivers(),
+                if (_filter != 1) ..._buildLikedArtistsSlivers(),
                 const SliverMiniPlayerBottomSpace(),
               ],
             ),

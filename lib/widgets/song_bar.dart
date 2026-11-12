@@ -20,6 +20,7 @@ import 'package:vybe/widgets/no_artwork_cube.dart';
 import 'package:vybe/widgets/overflow_menu_button.dart';
 import 'package:vybe/widgets/popup_menu_item.dart';
 import 'package:vybe/widgets/rename_song_dialog.dart';
+import 'package:vybe/widgets/spotify_download_icon.dart';
 
 List<PopupMenuEntry<String>> _buildSongMenuItems({
   required BuildContext context,
@@ -329,15 +330,26 @@ class _SongBarState extends State<SongBar> {
   late final ValueNotifier<bool> _songDownloadStatus;
   late String _songTitle;
   late String _songArtist;
-  late final String? _artworkPath;
-  late final String _lowResImageUrl;
-  late final String _ytid;
+  late String? _artworkPath;
+  late String _lowResImageUrl;
+  late String _ytid;
 
   @override
   void initState() {
     super.initState();
 
-    // Cache frequently accessed values
+    _readSong();
+
+    // Initialize ValueNotifiers only once
+    _songLikeStatus = ValueNotifier(isSongAlreadyLiked(_ytid));
+    final isOffline = isSongAlreadyOffline(_ytid);
+    _songOfflineStatus = ValueNotifier(isOffline);
+    _songDownloadStatus = ValueNotifier(false);
+    userLikedSongsList.addListener(_syncLikeStatus);
+    userOfflineSongs.addListener(_syncOfflineStatus);
+  }
+
+  void _readSong() {
     _songTitle = widget.song['title'] ?? '';
     _songArtist = widget.song['artist']?.toString() ?? '';
     _artworkPath = _firstNonEmptyString([
@@ -352,14 +364,6 @@ class _SongBarState extends State<SongBar> {
         ]) ??
         '';
     _ytid = widget.song['ytid'] ?? '';
-
-    // Initialize ValueNotifiers only once
-    _songLikeStatus = ValueNotifier(isSongAlreadyLiked(_ytid));
-    final isOffline = isSongAlreadyOffline(_ytid);
-    _songOfflineStatus = ValueNotifier(isOffline);
-    _songDownloadStatus = ValueNotifier(false);
-    userLikedSongsList.addListener(_syncLikeStatus);
-    userOfflineSongs.addListener(_syncOfflineStatus);
   }
 
   void _syncLikeStatus() {
@@ -380,16 +384,11 @@ class _SongBarState extends State<SongBar> {
   void didUpdateWidget(SongBar oldWidget) {
     super.didUpdateWidget(oldWidget);
 
-    // Update cached title and artist if they changed
-    final newTitle = widget.song['title'] ?? '';
-    final newArtist = widget.song['artist']?.toString() ?? '';
-
-    if (_songTitle != newTitle || _songArtist != newArtist) {
-      setState(() {
-        _songTitle = newTitle;
-        _songArtist = newArtist;
-      });
-    }
+    final previousId = _ytid;
+    _readSong();
+    _syncLikeStatus();
+    _syncOfflineStatus();
+    if (previousId != _ytid) _songDownloadStatus.value = false;
   }
 
   @override
@@ -413,7 +412,7 @@ class _SongBarState extends State<SongBar> {
         : widget.playCount;
 
     return Material(
-      color: widget.backgroundColor ?? colorScheme.surfaceContainerLow,
+      color: widget.backgroundColor ?? Colors.transparent,
       borderRadius: widget.borderRadius,
       clipBehavior: Clip.antiAlias,
       child: InkWell(
@@ -421,10 +420,7 @@ class _SongBarState extends State<SongBar> {
         child: Padding(
           padding:
               widget.barPadding ??
-              const EdgeInsetsDirectional.symmetric(
-                vertical: 10,
-                horizontal: 12,
-              ),
+              const EdgeInsetsDirectional.symmetric(vertical: 8, horizontal: 0),
           child: Row(
             children: [
               if (widget.rank != null) ...[
@@ -452,8 +448,20 @@ class _SongBarState extends State<SongBar> {
                   artist: _songArtist,
                   plays: plays,
                   colorScheme: colorScheme,
+                  offlineStatus: _songOfflineStatus,
                 ),
               ),
+              if (widget.showMusicDuration && widget.song['duration'] != null)
+                Padding(
+                  padding: const EdgeInsets.only(left: 8),
+                  child: Text(
+                    formatDuration(widget.song['duration']),
+                    style: TextStyle(
+                      color: colorScheme.onSurfaceVariant,
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
 
               if (widget.onAdd != null)
                 IconButton(
@@ -532,7 +540,7 @@ class _SongBarState extends State<SongBar> {
           if (isDownloading)
             Positioned.fill(
               child: ClipRRect(
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(4),
                 child: ColoredBox(
                   color: colorScheme.scrim.withValues(alpha: 0.42),
                   child: Center(
@@ -645,8 +653,10 @@ class _SongInfo extends StatelessWidget {
     required this.artist,
     this.plays,
     required this.colorScheme,
+    required this.offlineStatus,
   });
 
+  final ValueListenable<bool> offlineStatus;
   final String title;
   final String artist;
   final String? plays;
@@ -659,23 +669,30 @@ class _SongInfo extends StatelessWidget {
       children: <Widget>[
         Text(
           title,
+          maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
             fontWeight: FontWeight.w600,
-            fontSize: 15,
+            fontSize: 16,
             color: colorScheme.onSurface,
           ),
         ),
         const SizedBox(height: 2),
         Row(
           children: [
+            ValueListenableBuilder<bool>(
+              valueListenable: offlineStatus,
+              builder: (_, isOffline, __) =>
+                  isOffline ? const DownloadedBadge() : const SizedBox.shrink(),
+            ),
             Flexible(
               child: Text(
                 artist,
+                maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   fontWeight: FontWeight.w400,
-                  fontSize: 13,
+                  fontSize: 14,
                   color: colorScheme.onSurfaceVariant,
                 ),
               ),
@@ -738,7 +755,7 @@ class _OfflineArtwork extends StatelessWidget {
       width: size,
       height: size,
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(4),
         child: Stack(
           children: [
             Image.file(
@@ -748,23 +765,6 @@ class _OfflineArtwork extends StatelessWidget {
               fit: BoxFit.cover,
               errorBuilder: (_, __, ___) =>
                   NullArtworkWidget(iconSize: 30, size: size),
-            ),
-            Positioned(
-              top: 3,
-              right: 3,
-              child: Container(
-                width: 20,
-                height: 20,
-                decoration: BoxDecoration(
-                  color: colorScheme.tertiaryContainer,
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  FluentIcons.cloud_off_24_filled,
-                  size: 11,
-                  color: colorScheme.onTertiaryContainer,
-                ),
-              ),
             ),
           ],
         ),
@@ -810,7 +810,7 @@ class _OnlineArtwork extends StatelessWidget {
             memCacheWidth: 256,
             memCacheHeight: 256,
             imageBuilder: (context, imageProvider) => ClipRRect(
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(4),
               child: Stack(
                 children: [
                   Image(
@@ -822,70 +822,12 @@ class _OnlineArtwork extends StatelessWidget {
                         ? const Rect.fromLTRB(1, 1, 1, 1)
                         : null,
                   ),
-                  if (isOffline)
-                    Positioned(
-                      top: 3,
-                      right: 3,
-                      child: Container(
-                        width: 20,
-                        height: 20,
-                        decoration: BoxDecoration(
-                          color: colorScheme.tertiaryContainer,
-                          shape: BoxShape.circle,
-                        ),
-                        child: Icon(
-                          FluentIcons.cloud_off_24_filled,
-                          size: 11,
-                          color: colorScheme.onTertiaryContainer,
-                        ),
-                      ),
-                    )
-                  else if (isLiked)
-                    Positioned(
-                      top: 3,
-                      right: 3,
-                      child: Container(
-                        width: 20,
-                        height: 20,
-                        decoration: BoxDecoration(
-                          color: colorScheme.primaryContainer,
-                          shape: BoxShape.circle,
-                        ),
-                        child: Icon(
-                          FluentIcons.heart_24_filled,
-                          size: 11,
-                          color: colorScheme.onPrimaryContainer,
-                        ),
-                      ),
-                    ),
                 ],
               ),
             ),
             errorWidget: (context, url, error) =>
                 NullArtworkWidget(iconSize: 30, size: size),
           ),
-          if (isDurationAvailable && !isOffline)
-            Positioned(
-              bottom: 4,
-              right: 4,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: colorScheme.surfaceContainerHighest.withValues(
-                    alpha: 0.85,
-                  ),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
-                  formatDuration(duration),
-                  style: TextStyle(
-                    color: colorScheme.onSurfaceVariant,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 11,
-                  ),
-                ),
-              ),
-            ),
         ],
       ),
     );

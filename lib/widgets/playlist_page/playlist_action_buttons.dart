@@ -3,15 +3,17 @@ import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:vybe/extensions/l10n.dart';
 
-/// Play and shuffle whatever the page is about, shared by the playlist and the
-/// artist pages. While [isLoading] the songs are still being read, so both
-/// buttons wait instead of playing an incomplete list.
+/// Spotify's action row: secondary actions ([leading]) on the left, shuffle
+/// and a large green play button on the right. Shared by the playlist and
+/// the artist pages. While [isLoading] the songs are still being read, so
+/// both buttons wait instead of playing an incomplete list.
 class PlaylistActionButtons extends StatelessWidget {
   const PlaylistActionButtons({
     super.key,
     required this.onPlay,
     required this.onShuffle,
     this.isLoading = false,
+    this.leading = const [],
   });
 
   final VoidCallback onPlay;
@@ -20,72 +22,61 @@ class PlaylistActionButtons extends StatelessWidget {
 
   final bool isLoading;
 
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24),
-      child: Row(
-        children: [
-          Expanded(
-            child: FilledButton.icon(
-              style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFF1DB954),
-                foregroundColor: Colors.black,
-                shape: const StadiumBorder(),
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                textStyle: const TextStyle(
-                  fontWeight: FontWeight.w800,
-                  fontSize: 15,
-                  letterSpacing: 0.2,
-                ),
-              ),
-              icon: isLoading
-                  ? const _Spinner()
-                  : const Icon(FluentIcons.play_24_filled, color: Colors.black),
-              label: Text(context.l10n!.play),
-              onPressed: isLoading ? null : onPlay,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: FilledButton.icon(
-              style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFF282828),
-                foregroundColor: Colors.white,
-                shape: const StadiumBorder(),
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                textStyle: const TextStyle(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 15,
-                  letterSpacing: 0.2,
-                ),
-              ),
-              icon: isLoading
-                  ? const _Spinner()
-                  : const Icon(
-                      FluentIcons.arrow_shuffle_24_filled,
-                      color: Colors.white,
-                    ),
-              label: Text(context.l10n!.shuffle),
-              onPressed: isLoading ? null : onShuffle,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Replaces the icon of a button while its songs are being read.
-class _Spinner extends StatelessWidget {
-  const _Spinner();
+  /// Like, download and similar buttons shown before the play controls.
+  final List<Widget> leading;
 
   @override
   Widget build(BuildContext context) {
-    return const SizedBox(
-      width: 18,
-      height: 18,
-      child: CircularProgressIndicator(strokeWidth: 2),
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Row(
+      children: [
+        Expanded(
+          child: IconButtonTheme(
+            data: IconButtonThemeData(
+              style: IconButton.styleFrom(
+                backgroundColor: Colors.transparent,
+                foregroundColor: colorScheme.onSurfaceVariant,
+              ),
+            ),
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(mainAxisSize: MainAxisSize.min, children: leading),
+            ),
+          ),
+        ),
+        IconButton(
+          tooltip: context.l10n!.shuffle,
+          iconSize: 26,
+          icon: Icon(
+            FluentIcons.arrow_shuffle_24_filled,
+            color: colorScheme.onSurfaceVariant,
+          ),
+          onPressed: isLoading ? null : onShuffle,
+        ),
+        const SizedBox(width: 4),
+        IconButton.filled(
+          tooltip: context.l10n!.play,
+          style: IconButton.styleFrom(
+            backgroundColor: const Color(0xFF1DB954),
+            foregroundColor: Colors.black,
+            fixedSize: const Size(56, 56),
+            shape: const CircleBorder(),
+          ),
+          iconSize: 30,
+          icon: isLoading
+              ? const SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.black,
+                  ),
+                )
+              : const Icon(FluentIcons.play_24_filled),
+          onPressed: isLoading ? null : onPlay,
+        ),
+      ],
     );
   }
 }

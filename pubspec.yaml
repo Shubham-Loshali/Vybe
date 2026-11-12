@@ -64,6 +64,18 @@ flutter:
     - assets/icons/ic_launcher.png
 
   fonts:
+    - family: Figtree
+      fonts:
+        - asset: assets/fonts/figtree/Figtree_400Regular.ttf
+          weight: 400
+        - asset: assets/fonts/figtree/Figtree_500Medium.ttf
+          weight: 500
+        - asset: assets/fonts/figtree/Figtree_600SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/figtree/Figtree_700Bold.ttf
+          weight: 700
+        - asset: assets/fonts/figtree/Figtree_800ExtraBold.ttf
+          weight: 800
     - family: paytoneOne
       fonts:
         - asset: assets/fonts/paytone/PaytoneOne-Regular.ttf

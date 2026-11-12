@@ -4,6 +4,7 @@ import 'package:audio_service/audio_service.dart';
 import 'package:fluentui_system_icons/fluentui_system_icons.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:vybe/extensions/l10n.dart';
+import 'package:vybe/main.dart';
 import 'package:vybe/services/common_services.dart';
 import 'package:vybe/services/lyrics/lyrics_models.dart';
 import 'package:vybe/services/settings_manager.dart';
@@ -125,7 +126,9 @@ class _LyricsViewState extends State<_LyricsView> {
   }
 
   void _resolveIfNeeded() {
-    final key = '${widget.metadata.artist} - ${widget.metadata.title}';
+    final key =
+        '${widget.metadata.extras?['ytid'] ?? widget.metadata.id}|${widget.metadata.artist}|'
+        '${widget.metadata.title}|${widget.metadata.album}|${widget.metadata.duration}';
     if (key == _resolvedKey) return;
     _resolvedKey = key;
     _lyricsFuture = getSongLyricsResult(
@@ -133,6 +136,7 @@ class _LyricsViewState extends State<_LyricsView> {
       widget.metadata.title,
       duration: widget.metadata.duration,
       album: widget.metadata.album,
+      videoId: widget.metadata.extras?['ytid']?.toString(),
     );
   }
 
@@ -164,6 +168,7 @@ class _LyricsViewState extends State<_LyricsView> {
     );
 
     return AsyncLoader<Lyrics?>(
+      key: ValueKey(_resolvedKey),
       future: _lyricsFuture,
       emptyWidget: unavailable(),
       errorBuilder: (ctx, error, stack) => unavailable(),
@@ -176,7 +181,16 @@ class _LyricsViewState extends State<_LyricsView> {
           valueListenable: syncedLyricsEnabled,
           builder: (context, syncedEnabled, _) {
             if (lyrics.isSynced && syncedEnabled) {
-              return SyncedLyricsView(lyrics: lyrics);
+              return SyncedLyricsView(
+                lyrics: lyrics,
+                positionStream: audioHandler.positionDataStream.map(
+                  (p) => p.position,
+                ),
+                initialPosition: audioHandler.currentPositionData.position,
+                onSeek: (position) => unawaited(audioHandler.seek(position)),
+                foregroundColor: colorScheme.onSecondaryContainer,
+                fontSize: 20,
+              );
             }
 
             return SingleChildScrollView(

@@ -76,13 +76,13 @@ class PlaylistBar extends StatelessWidget {
         : playlistTitle;
     Map<dynamic, dynamic>? updatedPlaylist;
     return Material(
-      color: colorScheme.surfaceContainerLow,
+      color: Colors.transparent,
       borderRadius: borderRadius,
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onPressed ?? _getDefaultOnPressed(context, updatedPlaylist),
         child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
+          padding: const EdgeInsets.symmetric(vertical: 8),
           child: Row(
             children: [
               if (isFolder)
@@ -334,18 +334,26 @@ class PlaylistBar extends StatelessWidget {
       );
     }
 
+    final isLikedSongs = cubeIcon == FluentIcons.heart_24_regular;
     return Container(
       width: 52,
       height: 52,
       decoration: BoxDecoration(
-        color: colorScheme.secondaryContainer,
+        color: isLikedSongs ? null : colorScheme.secondaryContainer,
+        gradient: isLikedSongs
+            ? const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [Color(0xFF450AF5), Color(0xFFC4EFD9)],
+              )
+            : null,
         borderRadius: BorderRadius.circular(4),
       ),
       child: Center(
         child: Icon(
-          cubeIcon,
+          isLikedSongs ? FluentIcons.heart_24_filled : cubeIcon,
           size: 26,
-          color: colorScheme.onSecondaryContainer,
+          color: isLikedSongs ? Colors.white : colorScheme.onSecondaryContainer,
         ),
       ),
     );

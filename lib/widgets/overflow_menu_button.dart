@@ -30,7 +30,7 @@ class OverflowMenuButton<T> extends StatelessWidget {
       onSelected: onSelected,
       itemBuilder: itemBuilder,
       icon: Icon(
-        icon ?? FluentIcons.more_vertical_24_regular,
+        icon ?? FluentIcons.more_horizontal_24_regular,
         size: iconSize,
         color: color ?? colorScheme.onSurfaceVariant,
       ),

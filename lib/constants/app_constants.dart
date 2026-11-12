@@ -2,7 +2,7 @@ import 'package:material_ui/material_ui.dart';
 
 const recommendedCubesNumber = 8;
 
-const commonSingleChildScrollViewPadding = EdgeInsets.symmetric(horizontal: 10);
+const commonSingleChildScrollViewPadding = EdgeInsets.symmetric(horizontal: 16);
 var commonBarRadius = BorderRadius.circular(8);
 var commonBarTitleStyle = const TextStyle(
   fontSize: 15,

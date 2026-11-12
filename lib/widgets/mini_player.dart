@@ -1,13 +1,15 @@
 import 'package:audio_service/audio_service.dart';
 import 'package:fluentui_system_icons/fluentui_system_icons.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:rxdart/rxdart.dart';
 import 'package:vybe/main.dart';
 import 'package:vybe/models/full_player_state.dart';
 import 'package:vybe/models/position_data.dart';
 import 'package:vybe/screens/now_playing_page.dart';
+import 'package:vybe/utilities/artwork_color_extractor.dart';
+import 'package:vybe/utilities/player_colors.dart';
 import 'package:vybe/widgets/marquee.dart';
 import 'package:vybe/widgets/song_artwork.dart';
-import 'package:rxdart/rxdart.dart';
 
 final Stream<FullPlayerState> _fullPlayerStateStream =
     Rx.combineLatest3(
@@ -91,10 +93,30 @@ class _MiniPlayerBodyState extends State<_MiniPlayerBody>
     with SingleTickerProviderStateMixin {
   late final AnimationController _animationController;
   late final Animation<double> _scaleAnimation;
+  Color? _tint;
+  String? _tintArtwork;
+
+  void _updateTint() {
+    final uri = widget.metadata.artUri?.toString();
+    if (uri == _tintArtwork) return;
+    _tintArtwork = uri;
+    _tint = null;
+    if (uri == null) return;
+    ArtworkColorExtractor.extractDominantColor(uri).then((color) {
+      if (mounted && _tintArtwork == uri) setState(() => _tint = color);
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant _MiniPlayerBody oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _updateTint();
+  }
 
   @override
   void initState() {
     super.initState();
+    _updateTint();
     _animationController = AnimationController(
       duration: const Duration(milliseconds: 100),
       vsync: this,
@@ -165,7 +187,9 @@ class _MiniPlayerBodyState extends State<_MiniPlayerBody>
             child: Container(
               height: MiniPlayer.playerHeight,
               decoration: BoxDecoration(
-                color: colorScheme.surfaceContainerHigh,
+                color: miniPlayerSurface(
+                  _tint ?? colorScheme.surfaceContainerHigh,
+                ),
                 borderRadius: BorderRadius.circular(MiniPlayer._borderRadius),
                 boxShadow: [
                   BoxShadow(
@@ -186,27 +210,14 @@ class _MiniPlayerBodyState extends State<_MiniPlayerBody>
                         children: [
                           _ArtworkWidget(metadata: metadata),
                           Expanded(
-                            child: AnimatedSwitcher(
-                              duration: const Duration(milliseconds: 300),
-                              switchInCurve: Curves.easeIn,
-                              switchOutCurve: Curves.easeOut,
-                              layoutBuilder: (currentChild, previousChildren) =>
-                                  Stack(
-                                    alignment: Alignment.centerLeft,
-                                    children: [
-                                      ...previousChildren,
-                                      if (currentChild != null) currentChild,
-                                    ],
-                                  ),
-                              transitionBuilder: (child, animation) =>
-                                  FadeTransition(opacity: animation, child: child),
-                              child: KeyedSubtree(
-                                key: ValueKey(metadata.id),
-                                child: _MetadataWidget(
-                                  title: metadata.title,
-                                  artist: metadata.artist,
-                                  colorScheme: colorScheme,
-                                ),
+                            child: KeyedSubtree(
+                              key: ValueKey(
+                                '${metadata.extras?['ytid']}|${metadata.title}|${metadata.artist}',
+                              ),
+                              child: _MetadataWidget(
+                                title: metadata.title,
+                                artist: metadata.artist,
+                                colorScheme: colorScheme,
                               ),
                             ),
                           ),
@@ -226,9 +237,9 @@ class _MiniPlayerBodyState extends State<_MiniPlayerBody>
                       child: LinearProgressIndicator(
                         value: progress,
                         minHeight: 2.5,
-                        backgroundColor: Colors.white.withValues(alpha: 0.12),
-                        valueColor: AlwaysStoppedAnimation<Color>(
-                          colorScheme.primary,
+                        backgroundColor: Colors.white.withValues(alpha: 0.2),
+                        valueColor: const AlwaysStoppedAnimation<Color>(
+                          Colors.white,
                         ),
                       ),
                     ),
@@ -317,7 +328,7 @@ class _MetadataWidget extends StatelessWidget {
             Text(
               artist!,
               style: const TextStyle(
-                color: Color(0xFFB3B3B3),
+                color: Color(0xFFD9D9D9),
                 fontSize: 12,
                 fontWeight: FontWeight.w400,
               ),
@@ -361,7 +372,7 @@ class _ControlsWidget extends StatelessWidget {
             highlightColor: Colors.transparent,
             icon: const Icon(
               FluentIcons.next_24_filled,
-              color: Color(0xFFB3B3B3),
+              color: Colors.white,
               size: 24,
             ),
             visualDensity: VisualDensity.compact,

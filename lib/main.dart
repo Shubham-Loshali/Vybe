@@ -247,7 +247,7 @@ class _VybeState extends State<Vybe> with WidgetsBindingObserver {
                 : Brightness.dark,
           ),
           child: MaterialApp.router(
-            themeMode: themeMode,
+            themeMode: ThemeMode.dark,
             darkTheme: getAppTheme(colorScheme),
             theme: getAppTheme(colorScheme),
             localizationsDelegates: [

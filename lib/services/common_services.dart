@@ -3,11 +3,13 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter/widgets.dart';
 import 'package:hive_ce/hive_ce.dart';
 import 'package:http/http.dart' as http;
 import 'package:vybe/constants/clients.dart';
 import 'package:vybe/main.dart' show logger;
+import 'package:vybe/services/artist_service.dart' show ytMusicClient;
 import 'package:vybe/services/data_manager.dart';
 import 'package:vybe/services/io_service.dart';
 import 'package:vybe/services/lyrics_manager.dart';
@@ -155,9 +157,27 @@ Future<bool> _validateCachedUrl(String songId, String cachedUrl) async {
 }
 
 Future<List> fetchSongsList(String searchQuery) async {
+  final query = searchQuery.trim();
+  if (query.isEmpty) return [];
+  try {
+    final tracks = await ytMusicClient.music
+        .searchSongs(query)
+        .timeout(const Duration(seconds: 4));
+    if (tracks.isNotEmpty) {
+      return tracks
+          .map((track) => returnSongLayout(0, track, isCatalogTrack: true))
+          .toList();
+    }
+  } catch (error, stackTrace) {
+    logger.log(
+      'YouTube Music search failed',
+      error: error,
+      stackTrace: stackTrace,
+    );
+  }
   try {
     // If not in cache, perform the search
-    final List<Video> searchResults = await ytClient.search.search(searchQuery);
+    final List<Video> searchResults = await ytClient.search.search(query);
     final songsList = searchResults
         .map((video) => returnSongLayout(0, video))
         .toList();
@@ -193,9 +213,7 @@ Future<List> _getRecommendationsFromRecentlyPlayed() async {
   if (seedPool.isEmpty) {
     return await _getRecommendationsFromMixedSources();
   }
-  final recent = (List.from(
-    seedPool,
-  )..shuffle()).take(5).toList();
+  final recent = (List.from(seedPool)..shuffle()).take(5).toList();
 
   return _getRecommendationsFromSeedSongs(recent);
 }
@@ -793,8 +811,21 @@ Future<Map<String, dynamic>> getSongDetails(
   }
 }
 
-Lyrics? _lastLyricsResult;
 int _lyricsRequestCounter = 0;
+
+String _customLyricsKey(String? artist, String title, String? album) =>
+    'lyrics_custom_${sha256.convert(utf8.encode('${artist ?? ''}|$title|${album ?? ''}'))}';
+
+Future<void> saveCustomSongLyrics(
+  Lyrics result,
+  String? artist,
+  String title, {
+  String? album,
+}) => addOrUpdateData(
+  'user',
+  _customLyricsKey(artist, title, album),
+  result.toJson(),
+);
 
 /// Plain-text version of [result] as shown for unsynced lyrics.
 String formatPlainLyrics(Lyrics result) {
@@ -809,23 +840,73 @@ Future<Lyrics?> getSongLyricsResult(
   String title, {
   Duration? duration,
   String? album,
+  String? videoId,
+  bool forceRefresh = false,
 }) async {
-  if (artist == null) return null;
-  final key = '$artist - $title';
-  if (lastFetchedLyrics == key) return _lastLyricsResult;
-
+  final metadataKey =
+      '${artist ?? ''}|$title|${album ?? ''}|${duration?.inSeconds ?? 0}';
+  final key = videoId == null || videoId.isEmpty
+      ? metadataKey
+      : '$metadataKey|$videoId';
+  final cacheKey = 'lyrics_v2_${sha256.convert(utf8.encode(key))}';
+  lastFetchedLyrics = key;
   lyrics.value = null;
   final requestId = ++_lyricsRequestCounter;
-  final result = await LyricsManager().fetchLyricsResult(
-    TrackInfo(title: title, artist: artist, album: album, duration: duration),
-  );
-  if (result == null) return null;
+  Lyrics? result;
+  try {
+    result = Lyrics.fromJson(
+      await getData('user', _customLyricsKey(artist, title, album)),
+    );
+  } catch (e, st) {
+    logger.log('Could not read custom lyrics', error: e, stackTrace: st);
+  }
+  if (result == null && (!forceRefresh || offlineMode.value)) {
+    try {
+      result = Lyrics.fromJson(
+        await getData(
+          'cache',
+          cacheKey,
+          cachingDuration: Duration(days: offlineMode.value ? 365 : 7),
+        ),
+      );
+      // Keep previously downloaded lyrics usable without a network connection
+      // after adding video-specific lookup keys.
+      if (result == null && offlineMode.value && key != metadataKey) {
+        result = Lyrics.fromJson(
+          await getData(
+            'cache',
+            'lyrics_v2_${sha256.convert(utf8.encode(metadataKey))}',
+            cachingDuration: const Duration(days: 365),
+          ),
+        );
+      }
+    } catch (e, st) {
+      logger.log('Could not read saved lyrics', error: e, stackTrace: st);
+    }
+  }
+  if (result == null && !offlineMode.value) {
+    result = await LyricsManager().fetchLyricsResult(
+      TrackInfo(
+        title: title,
+        artist: artist ?? '',
+        album: album,
+        duration: duration,
+        videoId: videoId,
+      ),
+      forceRefresh: forceRefresh,
+    );
+    if (result != null) {
+      try {
+        await addOrUpdateData('cache', cacheKey, result.toJson());
+      } catch (e, st) {
+        logger.log('Could not save lyrics', error: e, stackTrace: st);
+      }
+    }
+  }
 
   // Ignore the response if the user already moved on to another song.
   if (requestId == _lyricsRequestCounter) {
-    _lastLyricsResult = result;
-    lyrics.value = formatPlainLyrics(result);
-    lastFetchedLyrics = key;
+    lyrics.value = result == null ? null : formatPlainLyrics(result);
   }
   return result;
 }

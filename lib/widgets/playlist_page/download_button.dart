@@ -6,6 +6,7 @@ import 'package:vybe/services/playlist_download_service.dart';
 import 'package:vybe/services/settings_manager.dart';
 import 'package:vybe/utilities/flutter_toast.dart';
 import 'package:vybe/utilities/offline_playlist_dialogs.dart';
+import 'package:vybe/widgets/spotify_download_icon.dart';
 
 /// Downloads a playlist for offline playback, showing the download progress
 /// and turning into a "remove offline" button once every song is stored.
@@ -77,12 +78,8 @@ class _PlaylistDownloadButtonState extends State<PlaylistDownloadButton> {
         valueListenable: offlinePlaylistService.offlinePlaylists,
         builder: (context, __, ___) {
           if (_isOffline) {
-            return IconButton.filled(
-              icon: Icon(
-                FluentIcons.arrow_download_off_24_filled,
-                color: Theme.of(context).colorScheme.onPrimary,
-              ),
-              iconSize: 24,
+            return IconButton(
+              icon: const SpotifyDownloadIcon(downloaded: true),
               onPressed: () =>
                   showRemoveOfflinePlaylistDialog(context, playlistId),
               tooltip: context.l10n!.removeOffline,
@@ -114,9 +111,8 @@ class _PlaylistDownloadButtonState extends State<PlaylistDownloadButton> {
                 );
               }
 
-              return IconButton.filledTonal(
-                icon: const Icon(FluentIcons.arrow_download_24_filled),
-                iconSize: 24,
+              return IconButton(
+                icon: const SpotifyDownloadIcon(downloaded: false),
                 onPressed: () => _download(context),
                 tooltip: context.l10n!.downloadPlaylist,
               );
@@ -139,8 +135,9 @@ class _PlaylistDownloadButtonState extends State<PlaylistDownloadButton> {
             height: 40,
             child: CircularProgressIndicator(
               value: progress.isCancelled ? null : progress.progress,
-              strokeWidth: 3,
-              backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+              strokeWidth: 2.5,
+              color: const Color(0xFF1DB954),
+              backgroundColor: const Color(0xFF404040),
             ),
           ),
           if (!progress.isCancelled)

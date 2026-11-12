@@ -12,6 +12,7 @@ import 'package:vybe/utilities/flutter_bottom_sheet.dart'
     show closeCurrentBottomSheet;
 import 'package:vybe/utilities/url_launcher.dart';
 import 'package:vybe/widgets/mini_player.dart';
+import 'package:vybe/widgets/spotify_header.dart';
 
 class BottomNavigationPage extends StatefulWidget {
   const BottomNavigationPage({required this.child, super.key});
@@ -128,7 +129,16 @@ class _BottomNavigationPageState extends State<BottomNavigationPage> {
                   ),
                 ),
                 bottomNavigationBar: !isLargeScreen
-                    ? NavigationBar(
+                    ? DecoratedBox(
+                        decoration: const BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [Color(0xE6121212), Color(0xFF000000)],
+                          ),
+                        ),
+                        child: NavigationBar(
+                        backgroundColor: Colors.transparent,
                         selectedIndex: _getCurrentIndex(items, isOfflineMode),
                         labelBehavior:
                             NavigationDestinationLabelBehavior.alwaysShow,
@@ -143,6 +153,7 @@ class _BottomNavigationPageState extends State<BottomNavigationPage> {
                               ),
                             )
                             .toList(),
+                      ),
                       )
                     : null,
               );
@@ -181,14 +192,8 @@ class _BottomNavigationPageState extends State<BottomNavigationPage> {
       _NavigationItem(
         icon: FluentIcons.library_24_regular,
         selectedIcon: FluentIcons.library_24_filled,
-        label: context.l10n?.library ?? 'Library',
+        label: yourLibraryLabel(context.l10n?.library ?? 'Library'),
         shellIndex: 2,
-      ),
-      _NavigationItem(
-        icon: FluentIcons.settings_24_regular,
-        selectedIcon: FluentIcons.settings_24_filled,
-        label: context.l10n?.settings ?? 'Settings',
-        shellIndex: 3,
       ),
     ]);
 

@@ -45,12 +45,18 @@ Map<String, dynamic> returnSongLayout(
   int index,
   Video song, {
   String? playlistImage,
+  bool isCatalogTrack = false,
 }) {
-  // Split only on the first ' - ' so dashes inside the title are preserved.
-  final sep = song.title.indexOf(' - ');
-  final artist = sep != -1 ? song.title.substring(0, sep) : song.author;
-  final rawTitle = sep != -1 ? song.title.substring(sep + 3) : song.title;
-  final title = formatSongTitle(rawTitle);
+  final heading = isCatalogTrack
+      ? song.title
+      : song.title.split('|').first.trim();
+  final sep = isCatalogTrack ? -1 : heading.indexOf(' - ');
+  final author = song.author
+      .replaceFirst(RegExp(r'\s*-\s*Topic$', caseSensitive: false), '')
+      .trim();
+  final artist = sep > 0 ? heading.substring(0, sep).trim() : author;
+  final rawTitle = sep > 0 ? heading.substring(sep + 3) : heading;
+  final title = isCatalogTrack ? rawTitle : formatSongTitle(rawTitle);
 
   return {
     'id': index,

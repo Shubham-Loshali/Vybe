@@ -32,14 +32,14 @@ class CustomBar extends StatelessWidget {
     final effectiveIconColor = iconColor ?? colorScheme.onSecondaryContainer;
 
     return Material(
-      color: backgroundColor ?? colorScheme.surfaceContainerLow,
+      color: backgroundColor ?? Colors.transparent,
       borderRadius: borderRadius,
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
         onLongPress: onLongPress,
         child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+          padding: const EdgeInsets.symmetric(vertical: 8),
           child: Row(
             children: [
               Container(

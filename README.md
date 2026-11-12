@@ -67,8 +67,10 @@ Whether you're discovering new tracks or revisiting your favourites, Vybe lets y
 
 ### 🎤 Synchronized Lyrics
 - Real-time synchronized lyrics.
-- LRC format support with karaoke-style scrolling.
-- Cache lyrics for offline access.
+- Artwork-backed glow, highlighted lines, and smooth scrolling in portrait and landscape.
+- Tap a timed line to seek, adjust its timing, or browse and return to the current line.
+- Automatic provider matching with retry and saved lyrics for offline access.
+- Import UTF-8 `.lrc` or `.txt` files for songs missing from online providers. Only lyrics with real timestamps are synchronized.
 
 ### 🎚️ Audio Equalizer
 - Multi-band equalizer.
@@ -185,6 +187,7 @@ Before submitting, run:
 
 ```bash
 flutter analyze
+flutter test test/lyrics
 ```
 
 ---

@@ -185,10 +185,10 @@ class _PlaylistPageState extends State<PlaylistPage> {
                   PlaylistSliverAppBar(
                     leading: _buildBackButton(context),
                     title: _playlistTitle,
-                    artwork: PlaylistHeroArtwork(
-                      _playlist,
-                      cubeIcon: widget.cubeIcon,
-                    ),
+                    artwork: PlaylistHeroArtwork({
+                      ..._playlist,
+                      'list': _originalPlaylistList,
+                    }, cubeIcon: widget.cubeIcon),
                   ),
                   SliverToBoxAdapter(child: _buildHeaderSection()),
                   if ((_playlist['list'] as List? ?? const []).isNotEmpty) ...[
@@ -297,10 +297,19 @@ class _PlaylistPageState extends State<PlaylistPage> {
   Widget _buildHeaderSection() {
     final songsLength = (_playlist['list'] as List? ?? const []).length;
     final isUserCreated = _playlist['source'] == 'user-created';
-    final hasSecondaryActions =
-        (widget.playlistId != null && !isUserCreated && !offlineMode.value) ||
-        !offlineMode.value ||
-        isUserCreated;
+    final secondaryActions = <Widget>[
+      if (widget.playlistId != null && !isUserCreated && !offlineMode.value)
+        PlaylistLikeButton(
+          playlistId: _resolvedPlaylistId ?? '',
+          playlistData: () => _playlist,
+        ),
+      if (songsLength > 0) _buildDownloadButton(),
+      if (!offlineMode.value) ...[
+        PlaylistAddToPlaylistButton(resolvePlaylist: () async => _playlist),
+        if (!isUserCreated) _buildSyncButton(),
+      ],
+      if (isUserCreated) ...[_buildShareButton(), _buildEditButton()],
+    ];
 
     return Column(
       children: [
@@ -313,6 +322,7 @@ class _PlaylistPageState extends State<PlaylistPage> {
         ),
         if (songsLength > 0)
           PlaylistActionButtons(
+            leading: secondaryActions,
             onPlay: () => audioHandler.playPlaylistSong(
               playlist: _playlist,
               songIndex: 0,
@@ -328,31 +338,12 @@ class _PlaylistPageState extends State<PlaylistPage> {
                 shuffle: true,
               );
             },
-          ),
-        if (hasSecondaryActions) ...[
-          const SizedBox(height: 12),
+          )
+        else if (secondaryActions.isNotEmpty)
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
-            spacing: 5,
-            children: [
-              if (widget.playlistId != null &&
-                  !isUserCreated &&
-                  !offlineMode.value)
-                PlaylistLikeButton(
-                  playlistId: _resolvedPlaylistId ?? '',
-                  playlistData: () => _playlist,
-                ),
-              if (!offlineMode.value) ...[
-                PlaylistAddToPlaylistButton(
-                  resolvePlaylist: () async => _playlist,
-                ),
-                if (!isUserCreated) _buildSyncButton(),
-              ],
-              if (songsLength > 0) _buildDownloadButton(),
-              if (isUserCreated) ...[_buildShareButton(), _buildEditButton()],
-            ],
+            children: secondaryActions,
           ),
-        ],
         if (songsLength > 1) ...[
           const SizedBox(height: 12),
           SortChips<PlaylistSortType>(

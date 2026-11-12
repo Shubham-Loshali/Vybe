@@ -5,18 +5,21 @@ class TrackInfo {
     required this.artist,
     this.album,
     this.duration,
+    this.videoId,
   });
 
   final String title;
   final String artist;
   final String? album;
   final Duration? duration;
+  final String? videoId;
 
   TrackInfo copyWith({String? title, String? artist}) => TrackInfo(
     title: title ?? this.title,
     artist: artist ?? this.artist,
     album: album,
     duration: duration,
+    videoId: videoId,
   );
 }
 
@@ -37,6 +40,38 @@ class LyricLine {
 /// return timestamps (e.g. LRCLIB) and is sorted by start time.
 class Lyrics {
   const Lyrics({required this.source, this.plain, this.synced});
+
+  /// A small, provider-independent representation for the offline cache.
+  Map<String, dynamic> toJson() => {
+    'source': source,
+    'plain': plain,
+    if (isSynced)
+      'synced': [
+        for (final line in synced!)
+          {'start': line.start.inMilliseconds, 'text': line.text},
+      ],
+  };
+
+  static Lyrics? fromJson(dynamic value) {
+    if (value is! Map || value['source'] is! String) return null;
+    final lines = <LyricLine>[];
+    final rawLines = value['synced'];
+    if (rawLines is List) {
+      for (final raw in rawLines) {
+        if (raw is! Map || raw['start'] is! int || raw['text'] is! String) {
+          return null;
+        }
+        lines.add(LyricLine(Duration(milliseconds: raw['start']), raw['text']));
+      }
+      lines.sort((a, b) => a.start.compareTo(b.start));
+    }
+    final result = Lyrics(
+      source: value['source'],
+      plain: value['plain'] is String ? value['plain'] : null,
+      synced: lines.isEmpty ? null : lines,
+    );
+    return result.isEmpty ? null : result;
+  }
 
   /// Human readable provider name, e.g. `lrclib.net`.
   final String source;

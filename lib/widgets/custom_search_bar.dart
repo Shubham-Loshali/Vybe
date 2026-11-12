@@ -10,6 +10,7 @@ class CustomSearchBar extends StatefulWidget {
     required this.labelText,
     this.onChanged,
     this.loadingProgressNotifier,
+    this.prominent = false,
   });
   final Function(String) onSubmitted;
   final ValueNotifier<bool>? loadingProgressNotifier;
@@ -18,28 +19,63 @@ class CustomSearchBar extends StatefulWidget {
   final String labelText;
   final Function(String)? onChanged;
 
+  /// White field with dark text, as on Spotify's Search tab.
+  final bool prominent;
+
   @override
   _CustomSearchBarState createState() => _CustomSearchBarState();
 }
 
 class _CustomSearchBarState extends State<CustomSearchBar> {
   @override
+  void initState() {
+    super.initState();
+    widget.controller.addListener(_onTextChanged);
+  }
+
+  void _onTextChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void didUpdateWidget(CustomSearchBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller.removeListener(_onTextChanged);
+      widget.controller.addListener(_onTextChanged);
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_onTextChanged);
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final fieldColor = widget.prominent
+        ? Colors.white
+        : colorScheme.surfaceContainerHigh;
+    final textColor = widget.prominent ? Colors.black : colorScheme.onSurface;
+    final hintColor = widget.prominent
+        ? const Color(0xFF535353)
+        : colorScheme.onSurfaceVariant;
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 16),
       child: SearchBar(
         elevation: WidgetStateProperty.all(0),
         shadowColor: WidgetStateProperty.all(Colors.transparent),
-        backgroundColor: WidgetStateProperty.all(
-          colorScheme.surfaceContainerHigh,
-        ),
+        backgroundColor: WidgetStateProperty.all(fieldColor),
         overlayColor: WidgetStateProperty.all(
           colorScheme.primary.withValues(alpha: 0.08),
         ),
         shape: WidgetStateProperty.all(
-          RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(widget.prominent ? 6 : 8),
+          ),
         ),
         padding: WidgetStateProperty.all(
           const EdgeInsets.symmetric(horizontal: 16),
@@ -47,48 +83,44 @@ class _CustomSearchBarState extends State<CustomSearchBar> {
         hintText: widget.labelText,
         hintStyle: WidgetStateProperty.all(
           TextStyle(
-            color: colorScheme.onSurfaceVariant,
+            color: hintColor,
             fontSize: 16,
-            fontWeight: FontWeight.w400,
+            fontWeight: widget.prominent ? FontWeight.w600 : FontWeight.w400,
           ),
         ),
         textStyle: WidgetStateProperty.all(
           TextStyle(
-            color: colorScheme.onSurface,
+            color: textColor,
             fontSize: 16,
             fontWeight: FontWeight.w400,
           ),
         ),
         leading: Icon(
           FluentIcons.search_24_regular,
-          color: colorScheme.onSurfaceVariant,
+          color: widget.prominent ? Colors.black : colorScheme.onSurfaceVariant,
           size: 22,
         ),
         onSubmitted: (String value) {
           widget.onSubmitted(value);
           widget.focusNode.unfocus();
         },
-        onChanged: widget.onChanged != null
-            ? (value) async {
-                widget.onChanged!(value);
-                setState(() {});
-              }
-            : null,
+        onChanged: widget.onChanged,
         textInputAction: TextInputAction.search,
         controller: widget.controller,
         focusNode: widget.focusNode,
         trailing: [
           if (widget.controller.text.isNotEmpty)
             IconButton(
+              tooltip: 'Clear search',
               icon: Icon(
                 FluentIcons.dismiss_24_regular,
-                color: colorScheme.onSurfaceVariant,
+                color: hintColor,
                 size: 20,
               ),
               onPressed: () {
                 widget.controller.clear();
                 widget.onChanged?.call('');
-                setState(() {});
+                widget.focusNode.requestFocus();
               },
             ),
           if (widget.loadingProgressNotifier != null)

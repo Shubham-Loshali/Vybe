@@ -1,7 +1,7 @@
 import 'package:fluentui_system_icons/fluentui_system_icons.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:vybe/extensions/l10n.dart';
-import 'package:vybe/widgets/playlist_artwork.dart';
+import 'package:vybe/widgets/playlist_cover.dart';
 
 class PlaylistCube extends StatelessWidget {
   const PlaylistCube(
@@ -30,10 +30,10 @@ class PlaylistCube extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       child: Stack(
         children: [
-          PlaylistArtwork(
-            playlistArtwork: playlist['image'],
+          PlaylistCover(
+            playlist: playlistData ?? playlist,
             size: size,
-            cubeIcon: cubeIcon,
+            fallbackIcon: cubeIcon,
           ),
           if (showTypeLabel && playlist['image'] != null)
             Positioned(

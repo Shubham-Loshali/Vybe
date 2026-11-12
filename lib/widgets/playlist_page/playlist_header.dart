@@ -1,8 +1,8 @@
-import 'package:fluentui_system_icons/fluentui_system_icons.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:vybe/extensions/l10n.dart';
 
-/// The metadata and actions below a playlist, album or artist hero.
+/// The metadata below a playlist, album or artist hero, laid out the way
+/// Spotify does: a single grey subtitle line, left aligned.
 class PlaylistHeader extends StatelessWidget {
   const PlaylistHeader({
     super.key,
@@ -34,12 +34,28 @@ class PlaylistHeader extends StatelessWidget {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
+    final parts = <String>[
+      if (isArtist)
+        context.l10n!.artist
+      else if (isAlbum == true)
+        context.l10n!.album
+      else if (isAlbum == false)
+        context.l10n!.playlist,
+      if (songsLength == 1 &&
+          Localizations.localeOf(context).languageCode == 'en')
+        '1 song'
+      else if (songsLength != null)
+        '$songsLength ${context.l10n!.songs}',
+      if (monthlyListeners != null)
+        '$monthlyListeners ${context.l10n!.monthlyListeners}',
+    ];
+
     return Padding(
-      padding: EdgeInsets.fromLTRB(24, showTitle ? 20 : 0, 24, 8),
+      padding: EdgeInsets.fromLTRB(0, showTitle ? 20 : 8, 0, 8),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (showTitle) ...[
-            const SizedBox(height: 24),
             Text(
               title,
               style: theme.textTheme.headlineSmall?.copyWith(
@@ -49,57 +65,20 @@ class PlaylistHeader extends StatelessWidget {
               ),
               overflow: TextOverflow.ellipsis,
               maxLines: 2,
-              textAlign: TextAlign.center,
             ),
-            const SizedBox(height: 10),
-          ] else
-            const SizedBox(height: 12),
-          Wrap(
-            alignment: WrapAlignment.center,
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              if (isArtist)
-                _Chip(
-                  icon: FluentIcons.person_16_regular,
-                  label: context.l10n!.artist,
-                  color: colorScheme.primaryContainer,
-                  onColor: colorScheme.onPrimaryContainer,
-                  theme: theme,
-                )
-              else if (isAlbum != null)
-                _Chip(
-                  icon: isAlbum!
-                      ? FluentIcons.cd_16_regular
-                      : FluentIcons.apps_list_24_regular,
-                  label: isAlbum!
-                      ? context.l10n!.album
-                      : context.l10n!.playlist,
-                  color: colorScheme.primaryContainer,
-                  onColor: colorScheme.onPrimaryContainer,
-                  theme: theme,
-                ),
-              if (songsLength != null)
-                _Chip(
-                  icon: FluentIcons.text_bullet_list_24_filled,
-                  label: '$songsLength ${context.l10n!.songs}',
-                  color: colorScheme.secondaryContainer,
-                  onColor: colorScheme.onSecondaryContainer,
-                  theme: theme,
-                ),
-              if (monthlyListeners != null)
-                _Chip(
-                  icon: FluentIcons.headphones_20_filled,
-                  label: '$monthlyListeners ${context.l10n!.monthlyListeners}',
-                  color: colorScheme.secondaryContainer,
-                  onColor: colorScheme.onSecondaryContainer,
-                  theme: theme,
-                ),
-            ],
-          ),
+            const SizedBox(height: 6),
+          ],
+          if (parts.isNotEmpty)
+            Text(
+              parts.join(' \u2022 '),
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
           if (description != null && description!.trim().isNotEmpty)
             _Description(description!.trim()),
-          const SizedBox(height: 20),
+          const SizedBox(height: 12),
         ],
       ),
     );
@@ -133,52 +112,9 @@ class _DescriptionState extends State<_Description> {
             color: theme.colorScheme.onSurfaceVariant,
             height: 1.4,
           ),
-          textAlign: TextAlign.center,
           maxLines: _isExpanded ? null : 3,
           overflow: _isExpanded ? TextOverflow.clip : TextOverflow.ellipsis,
         ),
-      ),
-    );
-  }
-}
-
-class _Chip extends StatelessWidget {
-  const _Chip({
-    required this.icon,
-    required this.label,
-    required this.color,
-    required this.onColor,
-    required this.theme,
-  });
-
-  final IconData icon;
-  final String label;
-  final Color color;
-  final Color onColor;
-  final ThemeData theme;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-      decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 14, color: onColor),
-          const SizedBox(width: 6),
-          Text(
-            label,
-            style: theme.textTheme.labelMedium?.copyWith(
-              color: onColor,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0.2,
-            ),
-          ),
-        ],
       ),
     );
   }

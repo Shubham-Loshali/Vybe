@@ -6,17 +6,20 @@ import 'package:vybe/extensions/l10n.dart';
 import 'package:vybe/main.dart';
 import 'package:vybe/services/common_services.dart';
 import 'package:vybe/services/listening_stats_service.dart';
+import 'package:vybe/services/playlist_download_service.dart';
 import 'package:vybe/services/playlists_manager.dart';
+import 'package:vybe/services/router_service.dart';
 import 'package:vybe/services/settings_manager.dart';
 import 'package:vybe/utilities/app_utils.dart';
 import 'package:vybe/utilities/async_loader.dart';
 import 'package:vybe/utilities/listening_stats_utils.dart';
-import 'package:vybe/widgets/announcement_box.dart';
+import 'package:vybe/widgets/home_playlist_grid.dart';
 import 'package:vybe/widgets/listening_recap_card.dart';
 import 'package:vybe/widgets/mini_player_bottom_space.dart';
-import 'package:vybe/widgets/playlist_cube.dart';
 import 'package:vybe/widgets/recommended_songs_section.dart';
 import 'package:vybe/widgets/section_header.dart';
+import 'package:vybe/widgets/shelf_card.dart';
+import 'package:vybe/widgets/spotify_header.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -52,54 +55,69 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
+  /// 0 = everything, 1 = playlists only, 2 = songs only.
+  int _filter = 0;
+
   String _getGreeting() {
     final hour = DateTime.now().hour;
-    if (hour < 12) {
-      return 'Good morning';
-    } else if (hour < 17) {
-      return 'Good afternoon';
-    } else {
-      return 'Good evening';
-    }
+    if (hour < 12) return 'Good morning';
+    if (hour < 17) return 'Good afternoon';
+    return 'Good evening';
   }
 
   @override
   Widget build(BuildContext context) {
-    final playlistHeight = MediaQuery.sizeOf(context).height * 0.25 / 1.1;
     return Scaffold(
-      appBar: AppBar(title: Text(_getGreeting())),
+      appBar: AppBar(
+        automaticallyImplyLeading: false,
+        titleSpacing: 16,
+        toolbarHeight: 56,
+        title: Text(
+          _getGreeting(),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            fontSize: 22,
+            fontWeight: FontWeight.w800,
+            letterSpacing: -0.4,
+          ),
+        ),
+        actions: [
+          IconButton(
+            icon: const Icon(FluentIcons.history_24_regular),
+            onPressed: () =>
+                NavigationManager.router.go('/library/userSongs/recents'),
+          ),
+          IconButton(
+            icon: const Icon(FluentIcons.settings_24_regular),
+            onPressed: () =>
+                NavigationManager.router.go(NavigationManager.settingsPath),
+          ),
+          const SizedBox(width: 6),
+        ],
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(48),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: FilterPills(
+                labels: ['All', context.l10n!.playlists, context.l10n!.songs],
+                selected: _filter,
+                onSelected: (i) => setState(() => _filter = i),
+              ),
+            ),
+          ),
+        ),
+      ),
       body: SingleChildScrollView(
         padding: commonSingleChildScrollViewPadding,
         child: Column(
           children: [
-            ValueListenableBuilder<String?>(
-              valueListenable: announcementURL,
-              builder: (_, _url, __) {
-                if (_url == null) return const SizedBox.shrink();
-                final isSponsorshipAnnouncement = isSponsorshipAnnouncementUrl(
-                  _url,
-                );
-                final _message = isSponsorshipAnnouncement
-                    ? context.l10n!.sponsorProject
-                    : context.l10n!.newAnnouncement;
-                final _icon = isSponsorshipAnnouncement
-                    ? FluentIcons.heart_24_filled
-                    : FluentIcons.megaphone_24_filled;
-
-                return AnnouncementBox(
-                  message: _message,
-                  url: _url,
-                  icon: _icon,
-                  onDismiss: () async {
-                    announcementURL.value = null;
-                  },
-                );
-              },
-            ),
-            _buildSuggestedPlaylists(playlistHeight),
-            _buildSuggestedPlaylists(playlistHeight, showOnlyLiked: true),
-            _buildCurrentMonthRecapSection(),
-            _buildRecommendedSongsSection(),
+            if (_filter != 2) _buildQuickAccessGrid(),
+            if (_filter != 2) _buildSuggestedPlaylists(),
+            if (_filter == 0) _buildCurrentMonthRecapSection(),
+            if (_filter != 1) _buildRecommendedSongsSection(),
             const MiniPlayerBottomSpace(),
           ],
         ),
@@ -107,96 +125,72 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _buildSuggestedPlaylists(
-    double playlistHeight, {
-    bool showOnlyLiked = false,
-  }) {
-    if (showOnlyLiked) {
-      return ValueListenableBuilder<List<Map>>(
-        valueListenable: userLikedPlaylists,
-        builder: (_, likedPlaylists, __) => _buildSuggestedPlaylistsSection(
-          playlistHeight,
-          likedPlaylists
-              .where((playlist) => !isArtistPlaylist(playlist))
-              .take(recommendedCubesNumber)
-              .toList(),
-          showOnlyLiked: true,
-        ),
-      );
-    }
+  /// Keep shortcuts in sync with the library without fetching any new data.
+  Widget _buildQuickAccessGrid() {
+    return AnimatedBuilder(
+      animation: Listenable.merge([
+        pinnedPlaylistIds,
+        userCustomPlaylists,
+        userPlaylistFolders,
+        userLikedPlaylists,
+        userPlaylists,
+        onlinePlaylists,
+        offlinePlaylistService.offlinePlaylists,
+      ]),
+      builder: (context, _) => HomePlaylistGrid(
+        playlists: [
+          ...resolvePinnedPlaylists(pinnedPlaylistIds.value),
+          ...getUserCustomPlaylists(),
+          for (final folder in userPlaylistFolders.value)
+            ...(folder['playlists'] as List? ?? const []).whereType<Map>(),
+          ...userLikedPlaylists.value,
+          ...resolvePinnedPlaylists(userPlaylists.value),
+          ...offlinePlaylistService.offlinePlaylists.value.whereType<Map>(),
+        ],
+        onLikedSongsTap: () => context.push('/library/userSongs/liked'),
+        onPlaylistTap: (playlist) {
+          final id = Uri.encodeComponent(playlist['ytid'].toString().trim());
+          if (isArtistPlaylist(playlist)) {
+            context.push('/home/artist/$id', extra: playlist);
+          } else {
+            context.push('/home/playlist/$id');
+          }
+        },
+      ),
+    );
+  }
 
+  Widget _buildSuggestedPlaylists() {
     return AsyncLoader<List<dynamic>>(
       future: _suggestedPlaylistsFuture,
-      builder: (context, playlists) =>
-          _buildSuggestedPlaylistsSection(playlistHeight, playlists),
-    );
-  }
+      builder: (context, playlists) {
+        if (playlists.isEmpty) return const SizedBox.shrink();
 
-  Widget _buildSuggestedPlaylistsSection(
-    double playlistHeight,
-    List<dynamic> playlists, {
-    bool showOnlyLiked = false,
-  }) {
-    if (playlists.isEmpty) return const SizedBox.shrink();
+        const cardSize = 150.0;
+        final itemCount = playlists.length.clamp(0, recommendedCubesNumber);
 
-    final sectionTitle = showOnlyLiked
-        ? context.l10n!.backToFavorites
-        : context.l10n!.suggestedPlaylists;
-    final itemsNumber = playlists.length.clamp(0, recommendedCubesNumber);
-    final isLargeScreen = MediaQuery.of(context).size.width > 480;
-
-    return Column(
-      children: [
-        SectionHeader(
-          title: sectionTitle,
-          icon: showOnlyLiked
-              ? FluentIcons.heart_24_filled
-              : FluentIcons.list_24_filled,
-        ),
-        ConstrainedBox(
-          constraints: BoxConstraints(maxHeight: playlistHeight),
-          child: isLargeScreen
-              ? _buildHorizontalList(playlists, itemsNumber, playlistHeight)
-              : _buildCarouselView(playlists, itemsNumber, playlistHeight),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildHorizontalList(
-    List<dynamic> playlists,
-    int itemCount,
-    double height,
-  ) {
-    return ListView.builder(
-      scrollDirection: Axis.horizontal,
-      itemCount: itemCount,
-      itemBuilder: (context, index) {
-        final playlist = playlists[index];
-        return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          child: GestureDetector(
-            onTap: () => context.push('/home/playlist/${playlist['ytid']}'),
-            child: PlaylistCube(playlist, size: height),
-          ),
+        return Column(
+          children: [
+            SectionHeader(title: context.l10n!.suggestedPlaylists),
+            SizedBox(
+              height: cardSize + 56,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: itemCount,
+                separatorBuilder: (_, __) => const SizedBox(width: 12),
+                itemBuilder: (context, index) {
+                  final playlist = playlists[index];
+                  return ShelfCard(
+                    playlist: playlist,
+                    onTap: () =>
+                        context.push('/home/playlist/${playlist['ytid']}'),
+                  );
+                },
+              ),
+            ),
+          ],
         );
       },
-    );
-  }
-
-  Widget _buildCarouselView(
-    List<dynamic> playlists,
-    int itemCount,
-    double height,
-  ) {
-    return CarouselView.weighted(
-      flexWeights: const <int>[3, 2, 1],
-      itemSnapping: true,
-      onTap: (index) =>
-          context.push('/home/playlist/${playlists[index]['ytid']}'),
-      children: List.generate(itemCount, (index) {
-        return PlaylistCube(playlists[index], size: height * 2);
-      }),
     );
   }
 

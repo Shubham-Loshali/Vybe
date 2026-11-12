@@ -1,10 +1,7 @@
-import 'dart:io';
-
 import 'package:audio_service/audio_service.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:vybe/utilities/artwork_provider.dart';
 import 'package:vybe/widgets/no_artwork_cube.dart';
-import 'package:vybe/widgets/spinner.dart';
 
 class SongArtworkWidget extends StatelessWidget {
   const SongArtworkWidget({
@@ -21,29 +18,20 @@ class SongArtworkWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return metadata.artUri?.scheme == 'file'
-        ? SizedBox(
-            width: size,
-            height: size,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(borderRadius),
-              child: Image.file(
-                File(metadata.extras?['artWorkPath']),
-                fit: BoxFit.cover,
-              ),
+    final artwork = metadata.artUri?.toString();
+    Widget fallback() =>
+        NullArtworkWidget(iconSize: errorWidgetIconSize, size: size);
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(borderRadius),
+      child: artwork == null || artwork.isEmpty || artwork == 'null'
+          ? fallback()
+          : Image(
+              image: ArtworkProvider.get(artwork),
+              width: size,
+              height: size,
+              fit: BoxFit.cover,
+              errorBuilder: (_, error, stack) => fallback(),
             ),
-          )
-        : CachedNetworkImage(
-            width: size,
-            height: size,
-            imageUrl: metadata.artUri.toString(),
-            imageBuilder: (context, imageProvider) => ClipRRect(
-              borderRadius: BorderRadius.circular(borderRadius),
-              child: Image(image: imageProvider, fit: BoxFit.cover),
-            ),
-            placeholder: (context, url) => const Spinner(),
-            errorWidget: (context, url, error) =>
-                NullArtworkWidget(iconSize: errorWidgetIconSize, size: size),
-          );
+    );
   }
 }

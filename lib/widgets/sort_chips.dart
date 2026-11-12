@@ -23,7 +23,7 @@ class SortChips<T extends Enum> extends StatelessWidget {
 
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+      padding: EdgeInsets.zero,
       child: Row(
         children: sortTypes.map((type) {
           final isSelected = currentSortType == type;
@@ -36,14 +36,12 @@ class SortChips<T extends Enum> extends StatelessWidget {
                 sortTypeToString(type),
                 style: TextStyle(
                   fontWeight: FontWeight.w600,
-                  fontSize: 14,
-                  color: isSelected
-                      ? colorScheme.onSecondaryContainer
-                      : colorScheme.onSurfaceVariant,
+                  fontSize: 13,
+                  color: isSelected ? Colors.black : Colors.white,
                 ),
               ),
-              backgroundColor: colorScheme.surfaceContainerHigh,
-              selectedColor: colorScheme.secondaryContainer,
+              backgroundColor: const Color(0xFF2A2A2A),
+              selectedColor: colorScheme.primary,
               side: BorderSide.none,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(20),

@@ -10,10 +10,14 @@ class PlaylistHeroArtwork extends StatelessWidget {
     this.playlist, {
     super.key,
     this.cubeIcon = FluentIcons.text_bullet_list_24_filled,
+    this.isArtist = false,
   });
 
   final Map playlist;
   final IconData cubeIcon;
+
+  /// Artists get a round picture, everything else a square cover.
+  final bool isArtist;
 
   @override
   Widget build(BuildContext context) {
@@ -26,23 +30,26 @@ class PlaylistHeroArtwork extends StatelessWidget {
         final size = preferredSize
             .clamp(0.0, min(constraints.maxWidth, constraints.maxHeight))
             .toDouble();
-        final artwork = PlaylistCube(
-          playlist,
-          size: size,
-          cubeIcon: cubeIcon,
-          showTypeLabel: false,
-        );
+        final radius = isArtist ? size / 2 : 4.0;
 
-        return ClipPath(
-          clipper: const ShapeBorderClipper(
-            shape: StarBorder(
-              points: 8,
-              pointRounding: 0.8,
-              valleyRounding: 0.2,
-              innerRadiusRatio: 0.6,
-            ),
+        return DecoratedBox(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(radius),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.5),
+                blurRadius: 30,
+                offset: const Offset(0, 12),
+              ),
+            ],
           ),
-          child: artwork,
+          child: PlaylistCube(
+            playlist,
+            size: size,
+            cubeIcon: cubeIcon,
+            borderRadius: radius,
+            showTypeLabel: false,
+          ),
         );
       },
     );

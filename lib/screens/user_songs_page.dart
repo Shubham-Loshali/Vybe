@@ -103,7 +103,15 @@ class _UserSongsPageState extends State<UserSongsPage> {
       slivers: [
         PlaylistSliverAppBar(
           title: title,
-          artwork: PlaylistHeroArtwork({'title': title}, cubeIcon: icon),
+          artwork: PlaylistHeroArtwork({
+            'title': title,
+            'isLikedSongs': widget.page == 'liked',
+            'list': widget.page == 'liked'
+                ? userLikedSongsList.value
+                : widget.page == 'offline'
+                ? userOfflineSongs.value
+                : userRecentlyPlayed.value,
+          }, cubeIcon: icon),
         ),
         SliverToBoxAdapter(
           child: _buildHeaderSection(title, icon, songsLength, isOfflineSongs),

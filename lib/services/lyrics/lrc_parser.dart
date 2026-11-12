@@ -14,9 +14,15 @@ final RegExp _wordTag = RegExp(r'<\d{1,3}:\d{1,2}(?:[.:]\d{1,3})?>');
 /// are stripped). Metadata tags such as `[ar:...]` are ignored.
 List<LyricLine> parseLrc(String input) {
   final lines = <LyricLine>[];
+  // The offset is file-wide, including when it appears after timed lines.
   var offsetMs = 0;
+  final rawLines = input.replaceFirst('\ufeff', '').split(RegExp(r'\r\n?|\n'));
+  for (final raw in rawLines) {
+    final match = _offsetTag.firstMatch(raw);
+    if (match != null) offsetMs = int.tryParse(match.group(1)!) ?? 0;
+  }
 
-  for (final raw in input.split(RegExp(r'\r?\n'))) {
+  for (final raw in rawLines) {
     final offsetMatch = _offsetTag.firstMatch(raw);
     if (offsetMatch != null) {
       offsetMs = int.tryParse(offsetMatch.group(1)!) ?? 0;
@@ -55,5 +61,21 @@ List<LyricLine> parseLrc(String input) {
       final c = a.value.start.compareTo(b.value.start);
       return c != 0 ? c : a.key.compareTo(b.key);
     });
-  return indexed.map((e) => e.value).toList();
+  // Some providers repeat timestamps; preserve translations at the same time
+  // as a single line so neither disappears behind the active-line lookup.
+  final merged = <LyricLine>[];
+  for (final entry in indexed) {
+    final line = entry.value;
+    if (merged.isNotEmpty && merged.last.start == line.start) {
+      final previous = merged.removeLast();
+      final texts = <String>{
+        if (previous.text.isNotEmpty) previous.text,
+        if (line.text.isNotEmpty) line.text,
+      };
+      merged.add(LyricLine(line.start, texts.join('\n')));
+    } else {
+      merged.add(line);
+    }
+  }
+  return merged;
 }

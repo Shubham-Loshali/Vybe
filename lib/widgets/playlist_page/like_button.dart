@@ -72,23 +72,21 @@ class _PlaylistLikeButtonState extends State<PlaylistLikeButton> {
     return ValueListenableBuilder<bool>(
       valueListenable: _isLiked,
       builder: (context, isLiked, __) {
-        final icon = Icon(
-          isLiked ? FluentIcons.heart_24_filled : FluentIcons.heart_24_regular,
+        return IconButton(
+          icon: Icon(
+            isLiked
+                ? FluentIcons.heart_24_filled
+                : FluentIcons.heart_24_regular,
+            color: isLiked
+                ? const Color(0xFF1DB954)
+                : Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+          iconSize: 26,
+          onPressed: _toggleLikeStatus,
+          tooltip: isLiked
+              ? context.l10n!.removeFromLikedPlaylists
+              : context.l10n!.addToLikedPlaylists,
         );
-
-        return isLiked
-            ? IconButton.filled(
-                icon: icon,
-                iconSize: 24,
-                onPressed: _toggleLikeStatus,
-                tooltip: context.l10n!.removeFromLikedPlaylists,
-              )
-            : IconButton.filledTonal(
-                icon: icon,
-                iconSize: 24,
-                onPressed: _toggleLikeStatus,
-                tooltip: context.l10n!.addToLikedPlaylists,
-              );
       },
     );
   }

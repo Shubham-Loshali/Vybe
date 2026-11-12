@@ -1,75 +1,47 @@
-import 'package:flutter/scheduler.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:vybe/services/settings_manager.dart';
 
 ThemeMode themeMode = getThemeMode(themeModeSetting);
 Brightness brightness = getBrightnessFromThemeMode(themeMode);
 
-Brightness getBrightnessFromThemeMode(ThemeMode themeMode) {
-  final themeBrightnessMapping = {
-    ThemeMode.light: Brightness.light,
-    ThemeMode.dark: Brightness.dark,
-    ThemeMode.system:
-        SchedulerBinding.instance.platformDispatcher.platformBrightness,
-  };
+/// Vybe is locked to Spotify's dark look, whatever the system or the saved
+/// settings say.
+Brightness getBrightnessFromThemeMode(ThemeMode themeMode) => Brightness.dark;
 
-  return themeBrightnessMapping[themeMode] ?? Brightness.dark;
-}
-
-ThemeMode getThemeMode(int themeModeIndex) {
-  const themeModes = ThemeMode.values;
-  if (themeModeIndex >= 0 && themeModeIndex < themeModes.length) {
-    return themeModes[themeModeIndex];
-  }
-  return ThemeMode.system;
-}
+ThemeMode getThemeMode(int themeModeIndex) => ThemeMode.dark;
 
 ColorScheme getAppColorScheme(
   ColorScheme? lightColorScheme,
   ColorScheme? darkColorScheme,
 ) {
-  final selectedScheme = (brightness == Brightness.light)
-      ? lightColorScheme
-      : darkColorScheme;
-
-  if (useSystemColor.value && selectedScheme != null) {
-    return selectedScheme;
-  } else {
-    if (brightness == Brightness.dark) {
-      return ColorScheme(
-        brightness: Brightness.dark,
-        primary: primaryColorSetting, // Spotify Green (0xFF1DB954)
-        onPrimary: const Color(0xFF000000),
-        primaryContainer: primaryColorSetting.withValues(alpha: 0.25),
-        onPrimaryContainer: primaryColorSetting,
-        secondary: const Color(0xFFFFFFFF),
-        onSecondary: const Color(0xFF000000),
-        secondaryContainer: const Color(0xFF282828),
-        onSecondaryContainer: const Color(0xFFFFFFFF),
-        tertiary: const Color(0xFF1ED760),
-        onTertiary: const Color(0xFF000000),
-        tertiaryContainer: const Color(0xFF1DB954).withValues(alpha: 0.15),
-        onTertiaryContainer: const Color(0xFF1ED760),
-        error: const Color(0xFFE91429),
-        onError: const Color(0xFFFFFFFF),
-        surface: const Color(0xFF121212), // Spotify Dark Base
-        onSurface: const Color(0xFFFFFFFF), // Pure White High Emphasis
-        onSurfaceVariant: const Color(0xFFB3B3B3), // Spotify Subtext Gray
-        surfaceContainerLowest: const Color(0xFF000000),
-        surfaceContainerLow: const Color(0xFF181818),
-        surfaceContainer: const Color(0xFF222222),
-        surfaceContainerHigh: const Color(0xFF282828),
-        surfaceContainerHighest: const Color(0xFF333333),
-        outline: const Color(0xFF404040),
-        outlineVariant: const Color(0xFF282828),
-        shadow: const Color(0xFF000000),
-      );
-    }
-    return ColorScheme.fromSeed(
-      seedColor: primaryColorSetting,
-      brightness: brightness,
-    );
-  }
+  return ColorScheme(
+    brightness: Brightness.dark,
+    primary: const Color(0xFF1DB954), // Spotify Green
+    onPrimary: const Color(0xFF000000),
+    primaryContainer: const Color(0xFF1DB954).withValues(alpha: 0.25),
+    onPrimaryContainer: const Color(0xFF1DB954),
+    secondary: const Color(0xFFFFFFFF),
+    onSecondary: const Color(0xFF000000),
+    secondaryContainer: const Color(0xFF282828),
+    onSecondaryContainer: const Color(0xFFFFFFFF),
+    tertiary: const Color(0xFF1ED760),
+    onTertiary: const Color(0xFF000000),
+    tertiaryContainer: const Color(0xFF1DB954).withValues(alpha: 0.15),
+    onTertiaryContainer: const Color(0xFF1ED760),
+    error: const Color(0xFFE91429),
+    onError: const Color(0xFFFFFFFF),
+    surface: const Color(0xFF121212), // Spotify Dark Base
+    onSurface: const Color(0xFFFFFFFF), // Pure White High Emphasis
+    onSurfaceVariant: const Color(0xFFB3B3B3), // Spotify Subtext Gray
+    surfaceContainerLowest: const Color(0xFF000000),
+    surfaceContainerLow: const Color(0xFF181818),
+    surfaceContainer: const Color(0xFF222222),
+    surfaceContainerHigh: const Color(0xFF282828),
+    surfaceContainerHighest: const Color(0xFF333333),
+    outline: const Color(0xFF404040),
+    outlineVariant: const Color(0xFF282828),
+    shadow: const Color(0xFF000000),
+  );
 }
 
 ThemeData getAppTheme(ColorScheme colorScheme) {
@@ -78,8 +50,7 @@ ThemeData getAppTheme(ColorScheme colorScheme) {
       : ThemeData.dark();
 
   final isLight = colorScheme.brightness == Brightness.light;
-  final isPureBlack =
-      colorScheme.brightness == Brightness.dark && usePureBlackColor.value;
+  const isPureBlack = false;
 
   // Pure black & Spotify dark theme colors
   const pureBlack = Color(0xFF000000);
@@ -122,6 +93,33 @@ ThemeData getAppTheme(ColorScheme colorScheme) {
           : colorScheme);
 
   return ThemeData(
+    fontFamily: 'Figtree',
+    splashFactory: NoSplash.splashFactory,
+    highlightColor: Colors.white.withValues(alpha: 0.08),
+    progressIndicatorTheme: const ProgressIndicatorThemeData(
+      color: Color(0xFF1DB954),
+    ),
+    switchTheme: SwitchThemeData(
+      thumbColor: WidgetStateProperty.all(Colors.white),
+      trackColor: WidgetStateProperty.resolveWith(
+        (states) => states.contains(WidgetState.selected)
+            ? const Color(0xFF1DB954)
+            : const Color(0xFF727272),
+      ),
+      trackOutlineColor: WidgetStateProperty.all(Colors.transparent),
+    ),
+    checkboxTheme: CheckboxThemeData(
+      fillColor: WidgetStateProperty.resolveWith(
+        (states) => states.contains(WidgetState.selected)
+            ? const Color(0xFF1DB954)
+            : Colors.transparent,
+      ),
+      checkColor: WidgetStateProperty.all(Colors.black),
+    ),
+    textSelectionTheme: const TextSelectionThemeData(
+      cursorColor: Color(0xFF1DB954),
+      selectionHandleColor: Color(0xFF1DB954),
+    ),
     scaffoldBackgroundColor: bgColor,
     colorScheme: effectiveColorScheme,
     cardColor: cardBgColor,

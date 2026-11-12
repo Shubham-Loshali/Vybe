@@ -15,6 +15,19 @@ class PlaylistSliverAppBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final screenSize = MediaQuery.sizeOf(context);
+    final pageColor = Theme.of(context).scaffoldBackgroundColor;
+    // Spotify tints the header with the cover's colour; derive a stable tint
+    // from the title so every playlist gets its own backdrop.
+    final hash = title.codeUnits.fold<int>(
+      7,
+      (value, unit) => (value * 31 + unit) & 0x7fffffff,
+    );
+    final tint = HSLColor.fromAHSL(
+      1,
+      (hash % 360).toDouble(),
+      0.42,
+      0.30,
+    ).toColor();
 
     return SliverAppBar(
       leading: leading,
@@ -38,9 +51,18 @@ class PlaylistSliverAppBar extends StatelessWidget {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
-        background: Padding(
-          padding: const EdgeInsets.only(top: 56, bottom: 64),
-          child: Center(child: artwork),
+        background: DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [tint, pageColor],
+            ),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.only(top: 56, bottom: 64),
+            child: Center(child: artwork),
+          ),
         ),
       ),
     );

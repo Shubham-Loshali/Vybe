@@ -11,6 +11,7 @@ class PlaylistArtwork extends StatelessWidget {
     this.cubeIcon = FluentIcons.text_bullet_list_24_filled,
     this.iconSize,
     this.size = 220,
+    this.fallback,
   });
 
   final String? playlistArtwork;
@@ -18,18 +19,22 @@ class PlaylistArtwork extends StatelessWidget {
   final IconData cubeIcon;
   final double? iconSize;
   final double size;
+  final Widget? fallback;
 
-  Widget _nullArtwork() => NullArtworkWidget(
-    icon: cubeIcon,
-    iconSize: iconSize ?? (size * 0.3), // Default to 30% of container size
-    size: size,
-    title: playlistTitle,
-  );
+  Widget _nullArtwork() =>
+      fallback ??
+      NullArtworkWidget(
+        icon: cubeIcon,
+        iconSize: iconSize ?? (size * 0.3), // Default to 30% of container size
+        size: size,
+        title: playlistTitle,
+      );
 
   @override
   Widget build(BuildContext context) {
     final image = playlistArtwork;
-    if (image == null) return _nullArtwork();
+    if (image == null || image.trim().isEmpty || image == 'null')
+      return _nullArtwork();
 
     try {
       final provider = ArtworkProvider.get(image);
