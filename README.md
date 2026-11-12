@@ -64,23 +64,6 @@ Whether you're discovering new tracks or revisiting your favourites, Vybe lets y
 - Import public Spotify playlists using their URLs.
 - Automatically match tracks and add them to your library.
 
-The [Spotify exporter Worker](workers/spotify-exporter/README.md) provides an
-in-app CSV fallback with no file or browser step for listeners.
-
-Vybe can use an approved CSV export service when Spotify's public track list
-is incomplete or unavailable. Set its HTTPS endpoint when building the app with
-`--dart-define=SPOTIFY_CSV_EXPORT_URL=https://your-service.example/spotify-playlist`.
-Without this setting, Vybe uses Spotify's public track list.
-
-The endpoint receives `GET /spotify-playlist?id=<Spotify playlist ID>`. It must
-return UTF-8 `text/csv` with track and artist columns, such as
-`Track Name,Artist Name(s)`. It can send `X-Playlist-Name` for the playlist name
-and `X-Playlist-Total` for the total number of playlist items. If Vybe cannot
-confirm the full list, it asks before saving a partial import. Keep provider
-credentials on your server. The build setting is a URL and is visible in the APK.
-
-- Bring your existing playlists into Vybe.
-
 ### 🎤 Synchronized Lyrics
 - Real-time synchronized lyrics.
 - Artwork-backed glow, highlighted lines, and smooth scrolling in portrait and landscape.
