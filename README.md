@@ -11,6 +11,10 @@
   <br />
   Stream, discover, download, and enjoy your favourite music — without interruptions.
 </p>
+<p align="center">
+  <a href="https://github.com/Shubham-Loshali/Vybe/releases/tag/v10.6.2">⬇ Download Vybe</a>
+  &nbsp; • &nbsp;
+</p>
 
 <p align="center">
   <a href="https://github.com/Shubham-Loshali/Vybe/releases/tag/v10.6.2">
@@ -205,7 +209,7 @@ Third-party names and trademarks belong to their respective owners. Music availa
 </p>
 
 <p align="center">
-  <a href="https://github.com/Shubham-Loshali/Vybe/releases/tag/v10.6.0">⬇ Download Vybe</a>
+  <a href="https://github.com/Shubham-Loshali/Vybe/releases/tag/v10.6.2">⬇ Download Vybe</a>
   &nbsp; • &nbsp;
   <a href="https://github.com/Shubham-Loshali/Vybe">⭐ Star on GitHub</a>
 </p>
