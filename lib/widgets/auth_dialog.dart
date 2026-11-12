@@ -10,7 +10,6 @@ class AuthDialog extends StatefulWidget {
   static Future<void> show(BuildContext context) {
     return showDialog(
       context: context,
-      barrierDismissible: true,
       builder: (_) => const AuthDialog(),
     );
   }
@@ -201,7 +200,7 @@ class _AuthDialogState extends State<AuthDialog> {
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(10),
                 ),
-                side: BorderSide(color: colorScheme.outline.withOpacity(0.5)),
+                side: BorderSide(color: colorScheme.outline.withValues(alpha: 0.5)),
               ),
               onPressed: _isLoading ? null : _handleGoogleSignIn,
               icon: const Icon(Icons.account_circle, size: 20),
@@ -216,7 +215,7 @@ class _AuthDialogState extends State<AuthDialog> {
             Row(
               children: [
                 Expanded(
-                  child: Divider(color: colorScheme.outline.withOpacity(0.3)),
+                  child: Divider(color: colorScheme.outline.withValues(alpha: 0.3)),
                 ),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 10),
@@ -229,7 +228,7 @@ class _AuthDialogState extends State<AuthDialog> {
                   ),
                 ),
                 Expanded(
-                  child: Divider(color: colorScheme.outline.withOpacity(0.3)),
+                  child: Divider(color: colorScheme.outline.withValues(alpha: 0.3)),
                 ),
               ],
             ),
@@ -272,10 +271,10 @@ class _AuthDialogState extends State<AuthDialog> {
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: colorScheme.primaryContainer.withOpacity(0.3),
+                  color: colorScheme.primaryContainer.withValues(alpha: 0.3),
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(
-                    color: colorScheme.primary.withOpacity(0.5),
+                    color: colorScheme.primary.withValues(alpha: 0.5),
                   ),
                 ),
                 child: Row(
@@ -307,10 +306,10 @@ class _AuthDialogState extends State<AuthDialog> {
               Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: colorScheme.errorContainer.withOpacity(0.2),
+                  color: colorScheme.errorContainer.withValues(alpha: 0.2),
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(
-                    color: colorScheme.error.withOpacity(0.5),
+                    color: colorScheme.error.withValues(alpha: 0.5),
                   ),
                 ),
                 child: Text(

@@ -1,6 +1,6 @@
 import 'package:fluentui_system_icons/fluentui_system_icons.dart';
-import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:vybe/services/cloud_sync_service.dart';
 import 'package:vybe/utilities/flutter_toast.dart';
 import 'package:vybe/widgets/auth_dialog.dart';
