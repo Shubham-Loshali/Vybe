@@ -17,7 +17,6 @@ import 'package:vybe/widgets/playlist_cube.dart';
 import 'package:vybe/widgets/playlist_page/playlist_header.dart';
 import 'package:vybe/widgets/song_bar.dart';
 import 'package:vybe/widgets/spotify_download_icon.dart';
-import 'package:vybe/widgets/spotify_header.dart';
 
 import '../support/ui_fixture.dart';
 
@@ -277,7 +276,10 @@ void main() {
     wrappedEnabled.value = false;
     await tester.pumpWidget(uiApp(const HomePage()));
     await tester.pumpAndSettle();
-    expect(find.byType(ProfileBubble), findsNothing);
+    expect(
+      find.descendant(of: find.byType(AppBar), matching: find.text('V')),
+      findsNothing,
+    );
     expect(find.textContaining('Good '), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
     playlists = original;

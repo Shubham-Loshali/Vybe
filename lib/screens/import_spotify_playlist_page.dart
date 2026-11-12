@@ -1,6 +1,3 @@
-import 'dart:io';
-
-import 'package:file_picker/file_picker.dart';
 import 'package:fluentui_system_icons/fluentui_system_icons.dart';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
@@ -8,13 +5,13 @@ import 'package:vybe/extensions/l10n.dart';
 import 'package:vybe/main.dart' show logger;
 import 'package:vybe/services/artist_service.dart' show ytMusicClient;
 import 'package:vybe/services/playlists_manager.dart';
+import 'package:vybe/services/spotify_playlist_import.dart';
 import 'package:vybe/utilities/flutter_toast.dart';
 import 'package:vybe/utilities/formatter.dart';
-import 'package:vybe/utilities/url_launcher.dart';
 import 'package:vybe/widgets/mini_player.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
-/// A CSV row and its original position, used to preserve playlist order.
+/// An import row and its original position, used to preserve playlist order.
 typedef _ImportRow = ({int index, String title, String artist});
 
 class ImportSpotifyPlaylistPage extends StatefulWidget {
@@ -34,131 +31,141 @@ class _ImportSpotifyPlaylistPageState extends State<ImportSpotifyPlaylistPage> {
   static const _batchSize = 12;
   static const _batchPause = Duration(milliseconds: 150);
 
-  final _csvController = TextEditingController();
+  final _linkController = TextEditingController();
   final _playlistNameController = TextEditingController();
   bool _isImporting = false;
-  String? _fileName;
   int _processedCount = 0;
   int _totalCount = 0;
 
   @override
   void dispose() {
-    _csvController.dispose();
+    _linkController.dispose();
     _playlistNameController.dispose();
     super.dispose();
   }
 
-  Future<void> _chooseFile() async {
-    final result = await FilePicker.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['csv'],
-    );
-    if (result.isEmpty || !mounted) return;
-
-    final file = result.single;
-    final path = file.path;
-    if (path == null) return;
-    _csvController.text = await File(path).readAsString();
-    if (!mounted) return;
-    setState(() => _fileName = file.name);
-  }
-
-  Future<void> _importPlaylist() async {
+  Future<void> _runImport(Future<void> Function() task) async {
     if (_isImporting) return;
     if (_importRunning) {
       showToast(context, context.l10n!.spotifyPlaylistAlreadyImporting);
       return;
     }
-    final playlistName = _playlistNameController.text.trim();
-    if (playlistName.isEmpty) {
-      showToast(context, context.l10n!.enterPlaylistName);
-      return;
-    }
-    final records = _parseCsv(_csvController.text);
-    if (records.length < 2) {
-      showToast(context, context.l10n!.spotifyPlaylistEmpty);
-      return;
-    }
-
-    final headers = records.first
-        .map((header) => header.replaceFirst('\ufeff', '').trim().toLowerCase())
-        .toList();
-    bool isNameColumn(String header) =>
-        !header.contains('id') &&
-        !header.contains('uri') &&
-        !header.contains('url') &&
-        !header.contains('genre');
-    final songIndex = headers.indexWhere(
-      (header) =>
-          (header.contains('song') || header.contains('track')) &&
-          isNameColumn(header),
-    );
-    final artistIndex = headers.indexWhere(
-      (header) => header.contains('artist') && isNameColumn(header),
-    );
-    if (songIndex == -1 || artistIndex == -1) {
-      showToast(context, context.l10n!.spotifyPlaylistInvalid);
-      return;
-    }
-
-    final songs = records.skip(1).where((row) {
-      return row.length > songIndex &&
-          row.length > artistIndex &&
-          row[songIndex].trim().isNotEmpty;
-    }).toList();
-    if (songs.isEmpty) {
-      showToast(context, context.l10n!.spotifyPlaylistEmpty);
-      return;
-    }
-
-    final rows = songs.indexed
-        .map(
-          (entry) => (
-            index: entry.$1,
-            title: entry.$2[songIndex].trim(),
-            artist: entry.$2[artistIndex].trim(),
-          ),
-        )
-        .toList();
-
+    FocusScope.of(context).unfocus();
     _importRunning = true;
     setState(() {
       _isImporting = true;
       _processedCount = 0;
-      _totalCount = rows.length;
+      _totalCount = 0;
     });
-
-    // Key results by their CSV position so retry results remain ordered.
-    final foundByIndex = <int, Map>{};
-    List<_ImportRow> missingRows;
-    var rateLimited = false;
     try {
-      final firstPass = await _searchBatch(
-        rows,
+      await task();
+    } catch (error, stackTrace) {
+      logger.log(
+        'Spotify playlist import failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      if (mounted)
+        showToast(context, context.l10n!.spotifyPlaylistImportFailed);
+    } finally {
+      _importRunning = false;
+      if (mounted) setState(() => _isImporting = false);
+    }
+  }
+
+  Future<void> _importFromLink() => _runImport(() async {
+    SpotifyPlaylist playlist;
+    try {
+      playlist = await loadSpotifyPlaylist(_linkController.text);
+    } on FormatException {
+      if (mounted) showToast(context, context.l10n!.spotifyLinkInvalid);
+      return;
+    } catch (_) {
+      if (mounted) showToast(context, context.l10n!.spotifyLinkUnavailable);
+      return;
+    }
+    if (!mounted) return;
+    if (playlist.tracks.isEmpty) {
+      showToast(context, context.l10n!.spotifyLinkNoSongs);
+      return;
+    }
+    if (playlist.mayBeIncomplete) {
+      final total = playlist.totalEntries;
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text(context.l10n!.spotifyLinkPartialTitle),
+          content: Text(
+            total == null
+                ? context.l10n!.spotifyLinkMayBeIncomplete
+                : context.l10n!.spotifyLinkPartialCount(
+                    playlist.tracks.length,
+                    total,
+                  ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: Text(context.l10n!.cancel),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: Text(context.l10n!.importPlaylist),
+            ),
+          ],
+        ),
+      );
+      if (!mounted || confirmed != true) return;
+    }
+    final customName = _playlistNameController.text.trim();
+    final name = customName.isNotEmpty
+        ? customName
+        : playlist.title.isNotEmpty
+        ? playlist.title
+        : context.l10n!.spotifyPlaylistNameHint;
+    await _matchAndSave(
+      name,
+      playlist.tracks.indexed
+          .map(
+            (entry) => (
+              index: entry.$1,
+              title: entry.$2.title,
+              artist: entry.$2.artist,
+            ),
+          )
+          .toList(),
+    );
+  });
+
+  Future<void> _matchAndSave(String playlistName, List<_ImportRow> rows) async {
+    setState(() => _totalCount = rows.length);
+
+    // Key results by their original position so retry results remain ordered.
+    final foundByIndex = <int, Map>{};
+    final firstPass = await _searchBatch(
+      rows,
+      onProgress: (n) {
+        if (mounted) setState(() => _processedCount += n);
+      },
+    );
+    foundByIndex.addAll(firstPass.found);
+    var missingRows = firstPass.missing;
+    var rateLimited = firstPass.rateLimited;
+
+    // Retry misses once, unless the service is actively rate-limiting us.
+    if (!mounted) return;
+    if (!rateLimited && missingRows.isNotEmpty) {
+      // Include the retry work in the progress total.
+      if (mounted) setState(() => _totalCount += missingRows.length);
+      final retryPass = await _searchBatch(
+        missingRows,
         onProgress: (n) {
           if (mounted) setState(() => _processedCount += n);
         },
       );
-      foundByIndex.addAll(firstPass.found);
-      missingRows = firstPass.missing;
-      rateLimited = firstPass.rateLimited;
-
-      // Retry misses once, unless the service is actively rate-limiting us.
-      if (!rateLimited && missingRows.isNotEmpty) {
-        // Include the retry work in the progress total.
-        if (mounted) setState(() => _totalCount += missingRows.length);
-        final retryPass = await _searchBatch(
-          missingRows,
-          onProgress: (n) {
-            if (mounted) setState(() => _processedCount += n);
-          },
-        );
-        foundByIndex.addAll(retryPass.found);
-        missingRows = retryPass.missing;
-        rateLimited = retryPass.rateLimited;
-      }
-    } finally {
-      _importRunning = false;
+      foundByIndex.addAll(retryPass.found);
+      missingRows = retryPass.missing;
+      rateLimited = retryPass.rateLimited;
     }
 
     final foundSongs = [
@@ -167,9 +174,10 @@ class _ImportSpotifyPlaylistPageState extends State<ImportSpotifyPlaylistPage> {
     ];
 
     if (!mounted) return;
-    final (_, playlistId) = createCustomPlaylist(playlistName, null, context);
-    addSongsInCustomPlaylist(context, playlistId, foundSongs);
-    setState(() => _isImporting = false);
+    if (foundSongs.isNotEmpty) {
+      final (_, playlistId) = createCustomPlaylist(playlistName, null, context);
+      addSongsInCustomPlaylist(context, playlistId, foundSongs);
+    }
 
     final resultText = rateLimited
         ? '${context.l10n!.spotifyPlaylistImportFailed}\n${context.l10n!.spotifyPlaylistImportResult(foundSongs.length, rows.length)}'
@@ -207,6 +215,7 @@ class _ImportSpotifyPlaylistPageState extends State<ImportSpotifyPlaylistPage> {
     final found = <int, Map>{};
     final missing = <_ImportRow>[];
     for (var i = 0; i < rows.length; i += _batchSize) {
+      if (!mounted) break;
       final batch = rows.skip(i).take(_batchSize).toList();
       final batchResults = await Future.wait(
         batch.map((row) async {
@@ -255,7 +264,7 @@ class _ImportSpotifyPlaylistPageState extends State<ImportSpotifyPlaylistPage> {
           expectedTitle: expectedTitle,
         );
         if (video == null) return (null, false);
-        return (Map<String, dynamic>.from(returnSongLayout(0, video)), false);
+        return (returnSongLayout(0, video, isCatalogTrack: true), false);
       } on RequestLimitExceededException {
         // A single short retry for a transient hiccup; a second hit means
         // it's a genuine, sustained block.
@@ -276,45 +285,6 @@ class _ImportSpotifyPlaylistPageState extends State<ImportSpotifyPlaylistPage> {
     return (null, false);
   }
 
-  List<List<String>> _parseCsv(String input) {
-    final rows = <List<String>>[];
-    var row = <String>[];
-    var field = StringBuffer();
-    var quoted = false;
-
-    for (var index = 0; index < input.length; index++) {
-      final character = input[index];
-      if (character == '"') {
-        if (quoted && index + 1 < input.length && input[index + 1] == '"') {
-          field.write('"');
-          index++;
-        } else {
-          quoted = !quoted;
-        }
-      } else if (character == ',' && !quoted) {
-        row.add(field.toString());
-        field = StringBuffer();
-      } else if ((character == '\n' || character == '\r') && !quoted) {
-        if (character == '\r' &&
-            index + 1 < input.length &&
-            input[index + 1] == '\n') {
-          index++;
-        }
-        row.add(field.toString());
-        field = StringBuffer();
-        if (row.any((value) => value.trim().isNotEmpty)) rows.add(row);
-        row = <String>[];
-      } else {
-        field.write(character);
-      }
-    }
-    if (field.isNotEmpty || row.isNotEmpty) {
-      row.add(field.toString());
-      if (row.any((value) => value.trim().isNotEmpty)) rows.add(row);
-    }
-    return rows;
-  }
-
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
@@ -325,46 +295,24 @@ class _ImportSpotifyPlaylistPageState extends State<ImportSpotifyPlaylistPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(context.l10n!.importSpotifyPlaylistInstructions),
-            const SizedBox(height: 16),
-            OutlinedButton.icon(
-              onPressed: () => launchURL(
-                Uri.parse('https://www.chosic.com/spotify-playlist-exporter/'),
+            TextField(
+              controller: _linkController,
+              enabled: !_isImporting,
+              keyboardType: TextInputType.url,
+              autocorrect: false,
+              decoration: InputDecoration(
+                labelText: context.l10n!.spotifyLinkLabel,
+                hintText: 'https://open.spotify.com/playlist/…',
+                border: const OutlineInputBorder(),
               ),
-              icon: const Icon(FluentIcons.open_24_regular),
-              label: Text(context.l10n!.openChosicExporter),
-            ),
-            const SizedBox(height: 12),
-            OutlinedButton.icon(
-              onPressed: _isImporting ? null : _chooseFile,
-              icon: const Icon(FluentIcons.document_add_24_regular),
-              label: Text(_fileName ?? context.l10n!.chooseCsvFile),
             ),
             const SizedBox(height: 12),
             TextField(
               controller: _playlistNameController,
               enabled: !_isImporting,
               decoration: InputDecoration(
-                labelText: '${context.l10n!.playlistName} *',
+                labelText: context.l10n!.playlistName,
                 hintText: context.l10n!.spotifyPlaylistNameHint,
-                filled: true,
-                fillColor: colorScheme.surfaceContainerHigh,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _csvController,
-              enabled: !_isImporting,
-              minLines: 10,
-              maxLines: 18,
-              decoration: InputDecoration(
-                labelText: context.l10n!.pasteCsv,
-                hintText: context.l10n!.spotifyCsvHint,
-                alignLabelWithHint: true,
                 filled: true,
                 fillColor: colorScheme.surfaceContainerHigh,
                 border: OutlineInputBorder(
@@ -375,18 +323,18 @@ class _ImportSpotifyPlaylistPageState extends State<ImportSpotifyPlaylistPage> {
             ),
             const SizedBox(height: 16),
             FilledButton.icon(
-              onPressed: _isImporting ? null : _importPlaylist,
+              onPressed: _isImporting ? null : _importFromLink,
               icon: _isImporting
                   ? const SizedBox(
                       width: 18,
                       height: 18,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Icon(FluentIcons.arrow_upload_24_regular),
+                  : const Icon(FluentIcons.link_24_regular),
               label: Text(
                 _isImporting
                     ? context.l10n!.spotifyPlaylistImporting
-                    : context.l10n!.importPlaylist,
+                    : context.l10n!.spotifyImportFromLink,
               ),
             ),
             if (_isImporting && _totalCount > 0) ...[
