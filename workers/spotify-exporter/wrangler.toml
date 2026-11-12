@@ -1,6 +1,6 @@
 name = "vybe-spotify-exporter"
 main = "worker.mjs"
-compatibility_date = "2026-11-13"
+compatibility_date = "2026-11-12"
 
 [[ratelimits]]
 name = "EXPORT_RATE_LIMIT"
