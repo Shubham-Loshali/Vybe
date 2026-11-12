@@ -16,7 +16,7 @@ final playNextSongAutomatically = ValueNotifier<bool>(
 );
 
 final useSystemColor = ValueNotifier<bool>(
-  Hive.box('settings').get('useSystemColor', defaultValue: true),
+  Hive.box('settings').get('useSystemColor', defaultValue: false),
 );
 
 final usePureBlackColor = ValueNotifier<bool>(
@@ -77,7 +77,28 @@ Locale languageSetting = getLocaleFromLanguageCode(
 );
 
 int themeModeSetting =
-    Hive.box('settings').get('themeIndex', defaultValue: 0) as int;
+    Hive.box('settings').get('themeIndex', defaultValue: 2) as int;
+
+final userNameNotifier = ValueNotifier<String>(
+  Hive.box('settings').get('customUserName', defaultValue: '') as String,
+);
+
+String getUserFirstName() {
+  final custom = userNameNotifier.value.trim();
+  if (custom.isNotEmpty) return custom;
+  final googleName =
+      Hive.box('settings').get('cloudUserDisplayName') as String?;
+  if (googleName != null && googleName.trim().isNotEmpty) {
+    return googleName.trim().split(' ').first;
+  }
+  return '';
+}
+
+void setUserName(String name) {
+  final trimmed = name.trim();
+  userNameNotifier.value = trimmed;
+  Hive.box('settings').put('customUserName', trimmed);
+}
 
 String playlistSortSetting = Hive.box('settings')
     .get('playlistSortType', defaultValue: PlaylistSortType.default_.name);

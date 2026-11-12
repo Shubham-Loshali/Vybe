@@ -23,6 +23,7 @@ import 'package:vybe/utilities/flutter_toast.dart';
 import 'package:vybe/utilities/language_utils.dart';
 import 'package:vybe/utilities/platform_utils.dart';
 import 'package:vybe/widgets/bottom_sheet_bar.dart';
+import 'package:vybe/widgets/cloud_sync_settings_section.dart';
 import 'package:vybe/widgets/confirmation_dialog.dart';
 import 'package:vybe/widgets/custom_bar.dart';
 import 'package:vybe/widgets/mini_player_bottom_space.dart';
@@ -46,6 +47,7 @@ class SettingsPage extends StatelessWidget {
           inactivatedColor,
         ),
         if (!offlineMode.value) _buildOnlineFeaturesSection(context),
+        const CloudSyncSettingsSection(),
         const LocalSyncSettingsSection(),
         const SizedBox(height: 20),
         const MiniPlayerBottomSpace(),
@@ -67,90 +69,19 @@ class SettingsPage extends StatelessWidget {
     Color activatedColor,
     Color inactivatedColor,
   ) {
-    final isOffline = offlineMode.value;
-
     return Column(
       children: [
         SectionHeader(
           title: context.l10n!.preferences,
           icon: FluentIcons.options_24_filled,
         ),
-        CustomBar(
-          context.l10n!.accentColor,
-          FluentIcons.color_24_regular,
-          borderRadius: commonCustomBarRadiusFirst,
-          onTap: () => _showAccentColorPicker(context),
-        ),
-        CustomBar(
-          context.l10n!.themeMode,
-          FluentIcons.weather_sunny_28_regular,
-          onTap: () => _showThemeModePicker(context),
-        ),
-        CustomBar(
-          context.l10n!.language,
-          FluentIcons.translate_24_regular,
-          onTap: () => _showLanguagePicker(context),
-        ),
-        CustomBar(
-          context.l10n!.audioQuality,
-          FluentIcons.music_note_1_24_regular,
-          onTap: () => _showAudioQualityPicker(context),
-        ),
         if (isAndroidPlatform)
           CustomBar(
             context.l10n!.equalizer,
             FluentIcons.data_histogram_24_regular,
+            borderRadius: commonCustomBarRadiusFirst,
             onTap: () => context.push('/settings/equalizer'),
           ),
-        if (themeMode == ThemeMode.dark)
-          CustomBar(
-            context.l10n!.pureBlackTheme,
-            FluentIcons.color_background_24_regular,
-            description: context.l10n!.pureBlackThemeDescription,
-            trailing: Switch(
-              value: usePureBlackColor.value,
-              onChanged: (value) => _togglePureBlack(context, value),
-            ),
-          ),
-        if (isAndroidPlatform)
-          CustomBar(
-            context.l10n!.dynamicColor,
-            FluentIcons.toggle_left_24_regular,
-            description: context.l10n!.dynamicColorDescription,
-            trailing: Switch(
-              value: useSystemColor.value,
-              onChanged: (value) => _toggleSystemColor(context, value),
-            ),
-          ),
-
-        ValueListenableBuilder<bool>(
-          valueListenable: showAudioQualityBadge,
-          builder: (_, value, __) {
-            return CustomBar(
-              context.l10n!.audioQualityBadge,
-              FluentIcons.badge_24_regular,
-              description: context.l10n!.audioQualityBadgeDescription,
-              trailing: Switch(
-                value: value,
-                onChanged: (value) => _toggleAudioQualityBadge(context, value),
-              ),
-            );
-          },
-        ),
-        ValueListenableBuilder<bool>(
-          valueListenable: syncedLyricsEnabled,
-          builder: (_, value, __) {
-            return CustomBar(
-              context.l10n!.syncedLyrics,
-              FluentIcons.text_quote_24_regular,
-              description: context.l10n!.syncedLyricsDescription,
-              trailing: Switch(
-                value: value,
-                onChanged: (value) => _toggleSyncedLyrics(context, value),
-              ),
-            );
-          },
-        ),
         ValueListenableBuilder<bool>(
           valueListenable: useProxy,
           builder: (_, value, __) {
@@ -183,23 +114,6 @@ class SettingsPage extends StatelessWidget {
             );
           },
         ),
-        ValueListenableBuilder<bool>(
-          valueListenable: offlineMode,
-          builder: (_, value, __) {
-            return CustomBar(
-              context.l10n!.offlineMode,
-              FluentIcons.cloud_off_24_regular,
-              description: context.l10n!.offlineModeDescription,
-              borderRadius: isOffline && isFdroidBuild
-                  ? commonCustomBarRadiusLast
-                  : BorderRadius.zero,
-              trailing: Switch(
-                value: value,
-                onChanged: (value) => _toggleOfflineMode(context, value),
-              ),
-            );
-          },
-        ),
         if (!isFdroidBuild && isMobilePlatform)
           ValueListenableBuilder<bool?>(
             valueListenable: shouldWeCheckUpdates,
@@ -208,9 +122,6 @@ class SettingsPage extends StatelessWidget {
                 context.l10n!.automaticUpdateChecks,
                 FluentIcons.arrow_sync_24_regular,
                 description: context.l10n!.automaticUpdateChecksDescription,
-                borderRadius: offlineMode.value
-                    ? commonCustomBarRadiusLast
-                    : BorderRadius.zero,
                 trailing: Switch(
                   value: value ?? false,
                   onChanged: (value) =>
@@ -227,27 +138,13 @@ class SettingsPage extends StatelessWidget {
     return Column(
       children: [
         ValueListenableBuilder<bool>(
-          valueListenable: sponsorBlockSupport,
-          builder: (_, value, __) {
-            return CustomBar(
-              'SponsorBlock',
-              FluentIcons.cut_24_regular,
-              description: context.l10n!.sponsorBlockDescription,
-              borderRadius: commonCustomBarRadiusFirst,
-              trailing: Switch(
-                value: value,
-                onChanged: (value) => _toggleSponsorBlock(context, value),
-              ),
-            );
-          },
-        ),
-        ValueListenableBuilder<bool>(
           valueListenable: playNextSongAutomatically,
           builder: (_, value, __) {
             return CustomBar(
               context.l10n!.automaticSongPicker,
               FluentIcons.music_note_2_play_20_regular,
               description: context.l10n!.automaticSongPickerDescription,
+              borderRadius: commonCustomBarRadiusFirst,
               trailing: Switch(
                 value: value,
                 onChanged: (value) {
@@ -265,7 +162,6 @@ class SettingsPage extends StatelessWidget {
               context.l10n!.externalRecommendations,
               FluentIcons.channel_share_24_regular,
               description: context.l10n!.externalRecommendationsDescription,
-              borderRadius: commonCustomBarRadiusLast,
               trailing: Switch(
                 value: value,
                 onChanged: (value) =>

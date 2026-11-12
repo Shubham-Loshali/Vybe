@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "272874776400",
+    "project_id": "vybe-36c4f",
+    "storage_bucket": "vybe-36c4f.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:272874776400:android:dd555b730d8af8a5582e55",
+        "android_client_info": {
+          "package_name": "com.vybe.music"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "272874776400-2t2pp960pagukr34ihrc43hq5rrri3p1.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.vybe.music",
+            "certificate_hash": "388b381c77b8e3837eb8c78224085202335d0720"
+          }
+        },
+        {
+          "client_id": "272874776400-lgb868qr3tpvgf9nhntgm0d7aiffgl0o.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBYx0kmJwShk5KD1yYAAC5AfhrLy_wEQRo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "272874776400-lgb868qr3tpvgf9nhntgm0d7aiffgl0o.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

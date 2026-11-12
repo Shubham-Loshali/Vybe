@@ -1,9 +1,11 @@
 import 'package:fluentui_system_icons/fluentui_system_icons.dart';
 import 'package:go_router/go_router.dart';
+import 'package:hive_ce/hive.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:vybe/constants/app_constants.dart';
 import 'package:vybe/extensions/l10n.dart';
 import 'package:vybe/main.dart';
+import 'package:vybe/services/cloud_sync_service.dart';
 import 'package:vybe/services/common_services.dart';
 import 'package:vybe/services/listening_stats_service.dart';
 import 'package:vybe/services/playlist_download_service.dart';
@@ -13,6 +15,7 @@ import 'package:vybe/services/settings_manager.dart';
 import 'package:vybe/utilities/app_utils.dart';
 import 'package:vybe/utilities/async_loader.dart';
 import 'package:vybe/utilities/listening_stats_utils.dart';
+import 'package:vybe/widgets/auth_dialog.dart';
 import 'package:vybe/widgets/home_playlist_grid.dart';
 import 'package:vybe/widgets/listening_recap_card.dart';
 import 'package:vybe/widgets/mini_player_bottom_space.dart';
@@ -40,6 +43,15 @@ class _HomePageState extends State<HomePage> {
     );
     _recommendedSongsFuture = getRecommendedSongs();
     externalRecommendations.addListener(_refreshRecommendedSongs);
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final isDismissed =
+          Hive.box('settings').get('auth_prompt_dismissed', defaultValue: false);
+      if (CloudSyncService.instance.currentUser.value == null && !isDismissed) {
+        AuthDialog.show(context);
+      }
+    });
   }
 
   @override
@@ -60,9 +72,56 @@ class _HomePageState extends State<HomePage> {
 
   String _getGreeting() {
     final hour = DateTime.now().hour;
-    if (hour < 12) return 'Good morning';
-    if (hour < 17) return 'Good afternoon';
-    return 'Good evening';
+    String greeting;
+    if (hour < 12) {
+      greeting = 'Good morning';
+    } else if (hour < 17) {
+      greeting = 'Good afternoon';
+    } else {
+      greeting = 'Good evening';
+    }
+    final name = getUserFirstName();
+    if (name.isNotEmpty) {
+      return '$greeting, $name';
+    }
+    return greeting;
+  }
+
+  void _showEditNameDialog() {
+    final controller = TextEditingController(text: getUserFirstName());
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('What should we call you?'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          textCapitalization: TextCapitalization.words,
+          decoration: const InputDecoration(
+            hintText: 'e.g. Shubham',
+            prefixIcon: Icon(FluentIcons.person_24_regular),
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final newName = controller.text.trim();
+              if (newName.isNotEmpty) {
+                setUserName(newName);
+              }
+              Navigator.pop(dialogContext);
+              setState(() {});
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -72,15 +131,36 @@ class _HomePageState extends State<HomePage> {
         automaticallyImplyLeading: false,
         titleSpacing: 16,
         toolbarHeight: 56,
-        title: Text(
-          _getGreeting(),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
-            fontSize: 22,
-            fontWeight: FontWeight.w800,
-            letterSpacing: -0.4,
-          ),
+        title: ValueListenableBuilder<String>(
+          valueListenable: userNameNotifier,
+          builder: (context, _, __) {
+            return GestureDetector(
+              onTap: _showEditNameDialog,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Flexible(
+                    child: Text(
+                      _getGreeting(),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -0.4,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  const Icon(
+                    FluentIcons.edit_16_regular,
+                    size: 15,
+                    color: Color(0xFF6B8075),
+                  ),
+                ],
+              ),
+            );
+          },
         ),
         actions: [
           IconButton(

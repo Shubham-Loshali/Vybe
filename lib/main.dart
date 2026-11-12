@@ -15,6 +15,7 @@ import 'package:vybe/localization/app_localizations.dart';
 import 'package:vybe/screens/local_sync_page.dart';
 import 'package:vybe/screens/startup_splash.dart';
 import 'package:vybe/services/audio_service.dart';
+import 'package:vybe/services/cloud_sync_service.dart';
 import 'package:vybe/services/data_manager.dart';
 import 'package:vybe/services/io_service.dart';
 import 'package:vybe/services/listening_stats_service.dart';
@@ -319,20 +320,26 @@ class _VybeStartupState extends State<_VybeStartup> {
             !snapshot.hasError;
         final reducedMotion =
             PlatformDispatcher.instance.accessibilityFeatures.disableAnimations;
+
+        Widget content;
+        if (!ready) {
+          content = MaterialApp(
+            key: const ValueKey('opening'),
+            debugShowCheckedModeBanner: false,
+            theme: ThemeData.dark(),
+            home: StartupSplash(failed: snapshot.hasError),
+          );
+        } else {
+          content = const Vybe(key: ValueKey('ready'));
+        }
+
         return AnimatedSwitcher(
           duration: reducedMotion
               ? Duration.zero
               : const Duration(milliseconds: 280),
           switchInCurve: Curves.easeOutCubic,
           switchOutCurve: Curves.easeInCubic,
-          child: ready
-              ? const Vybe(key: ValueKey('ready'))
-              : MaterialApp(
-                  key: const ValueKey('opening'),
-                  debugShowCheckedModeBanner: false,
-                  theme: ThemeData.dark(),
-                  home: StartupSplash(failed: snapshot.hasError),
-                ),
+          child: content,
         );
       },
     );
@@ -358,6 +365,16 @@ Future<void> initialisation() async {
     } catch (e, stackTrace) {
       logger.log(
         'Local sync could not start',
+        error: e,
+        stackTrace: stackTrace,
+      );
+    }
+
+    try {
+      await CloudSyncService.instance.initialise();
+    } catch (e, stackTrace) {
+      logger.log(
+        'Cloud sync could not start',
         error: e,
         stackTrace: stackTrace,
       );
