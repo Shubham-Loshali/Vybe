@@ -1,14 +1,17 @@
 # Version 10.6.5 rollout
 
 Build the companion release with version `10.6.5+208` and publish it as `Vybe.apk`
-on GitHub release `v10.6.5` before activating this policy. Copy `check.json` to
-the repository's `update` branch and deploy the same policy through the existing
-Cloudflare Worker's `/check` route with `Cache-Control: no-store`.
+on GitHub release `v10.6.5` before activating this policy. Keep the root
+`check.json` identical to `workers/update-policy/check.json`. The existing
+Cloudflare Worker's `/check` route returns that policy with
+`Cache-Control: no-store`.
 
-The `update` branch includes its own `worker.mjs` and `wrangler.toml` so its
-Cloudflare preview check can build successfully. Keep `previews = {}` in both
-Wrangler configurations. Production deploys from `main`; `update` builds its
-own branch Preview while preserving the root fallback `check.json` URL.
+The `main` and `update` branches share the same commit and source files.
+Production deploys from `main`; `update` builds its branch Preview using the
+same root `wrangler.toml`, including `previews = {}`. The root fallback
+`check.json` remains available at its existing URL on the `update` branch.
+After preparing and checking a release, keep both branches aligned with
+`git push --atomic origin main main:update`.
 
 Clients with update checks block themselves when `version` is higher than their
 installed version. The policy requires `10.6.5` and explicitly lists versions

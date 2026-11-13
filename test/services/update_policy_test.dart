@@ -12,6 +12,8 @@ void main() {
       final policy = jsonDecode(
         File('workers/update-policy/check.json').readAsStringSync(),
       ) as Map<String, dynamic>;
+      final fallbackPolicy = jsonDecode(File('check.json').readAsStringSync());
+      expect(fallbackPolicy, policy);
       final target = policy['version'] as String;
       expect(target, appVersion);
       expect(policy['force_shutdown'], isFalse);

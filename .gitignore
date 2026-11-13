@@ -60,3 +60,7 @@ lib/localization/untranslated.json
 android/key.properties
 android/app/key.jks
 android/local.properties
+
+# Cloudflare and Node local files
+.wrangler/
+node_modules/
