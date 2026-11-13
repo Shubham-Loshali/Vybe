@@ -1,205 +1,126 @@
-# 🎵 Vybe
+<div align="center">
 
-<p align="center">
-  <img src="assets/icons/ic_launcher.png" alt="Vybe Logo" width="140" />
-</p>
+<img src="assets/icons/ic_launcher.png" alt="Vybe logo" width="120" />
 
-<h1 align="center">Your Music. Your Rules. Your Vybe.</h1>
+# Vybe 🎧
 
-<p align="center">
-  <strong>Done with ads? Ready for a better music experience?</strong>
-  <br />
-  Stream, discover, download, and enjoy your favourite music — without interruptions.
+**A music player for people who just want to press play.**
+<br />
+No ads. No subscription. No "create an account to continue."
 
+<br />
 
-<p align="center">
-  <a href="https://github.com/Shubham-Loshali/Vybe/releases/tag/v10.6.4">
-    <img src="https://img.shields.io/badge/⬇%20DOWNLOAD%20VYBE%20FOR%20ANDROID-GET%20V10.6.4-16C75B?style=for-the-badge&logo=android&logoColor=white&labelColor=111111" alt="Download Vybe" />
-  </a>
-</p>
-<p align="center">
-  <a href="https://github.com/Shubham-Loshali/Vybe/releases">All Releases</a> •
-  <a href="#-features">Features</a> •
-  <a href="#-installation">Installation</a> •
-  <a href="#-contributing">Contribute</a>
-</p>
+<a href="https://github.com/Shubham-Loshali/Vybe/releases/tag/v10.6.4">
+  <img src="https://img.shields.io/badge/Download-v10.6.4-16C75B?style=for-the-badge&logo=android&logoColor=white&labelColor=111111" alt="Download Vybe for Android" />
+</a>
 
-<p align="center">
-  <img src="https://img.shields.io/badge/Platform-Android-brightgreen?style=flat-square&logo=android" />
-  <img src="https://img.shields.io/badge/Built%20With-Flutter-blue?style=flat-square&logo=flutter" />
-  <img src="https://img.shields.io/badge/License-GPL--3.0-orange?style=flat-square" />
-  <img src="https://img.shields.io/badge/Version-10.6.4-purple?style=flat-square" />
-</p>
+<br /><br />
+
+<img src="https://img.shields.io/badge/Platform-Android-brightgreen?style=flat-square&logo=android" alt="Android" />
+<img src="https://img.shields.io/badge/Built%20with-Flutter-02569B?style=flat-square&logo=flutter" alt="Flutter" />
+<img src="https://img.shields.io/badge/License-GPL--3.0-orange?style=flat-square" alt="GPL-3.0" />
+
+<br /><br />
+
+[What is this?](#-what-is-this) ·
+[Features](#-what-it-can-do) ·
+[Install](#-getting-it) ·
+[Contribute](#-contributing)
+
+</div>
 
 ---
 
-## 🌊 What is Vybe?
+## 👋 What is this?
 
-**Vybe** is a modern, lightweight, and open-source music streaming application built with Flutter.
+Vybe is a free, open-source music app for Android, built with Flutter.
 
-We believe listening to music should be simple. No unnecessary interruptions, no expensive subscriptions, and no complicated setup.
+I got tired of music apps that put ads between songs, hide basic features behind a paywall, and ask for your life story before they let you listen. So Vybe does the opposite: open it, search a song, hit play. That's the whole pitch.
 
-Vybe brings together everything you need for an enjoyable music experience — online streaming, offline downloads, playlist management, synchronized lyrics, and personalized listening statistics.
-
-Whether you're discovering new tracks or revisiting your favourites, Vybe lets you enjoy music your way.
-
-**Why settle for less when you can find your Vybe?**
+It also does a bunch of other stuff, which is below.
 
 ---
 
-## ✨ Features
+## ✨ What it can do
 
-### 🎧 Music Streaming
-- Search and discover music with intelligent suggestions.
-- Seamless background playback.
-- Rich notification and lock-screen controls.
-- Android Auto compatibility.
+### 🎵 Listening
+- Search for pretty much any song and stream it
+- Plays in the background, with proper notification and lock-screen controls
+- Works with Android Auto, so your car gets it too
 
-### 📥 Offline Downloads
-- Download individual tracks and playlists.
-- Save music for offline listening.
-- Local caching for a smoother listening experience.
+### 📥 Downloads
+- Save songs or whole playlists for offline listening
+- Local caching so things load fast the second time around
 
-### 🔄 Spotify Playlist Import
-- Import public Spotify playlists using their URLs.
-- Automatically match tracks and add them to your library.
+### 🟢 Bring your Spotify playlists with you
+- Paste a public Spotify playlist link and Vybe finds the matching tracks and builds the playlist in your library
 
-The [Spotify exporter Worker](workers/spotify-exporter/README.md) provides an
-in-app CSV fallback with no file or browser step for listeners.
+### 🎤 Synced lyrics
+- Lyrics that follow along with the song, with a glow that picks up colors from the album art
+- Tap a line to jump to that part of the song, or nudge the timing if it's a bit off
+- Lyrics get saved so they still work offline
+- Song missing lyrics? Import your own `.lrc` or `.txt` file (UTF-8). Only lines with real timestamps will sync.
 
-Vybe can use an approved CSV export service when Spotify's public track list
-is incomplete or unavailable. Set its HTTPS endpoint when building the app with
-`--dart-define=SPOTIFY_CSV_EXPORT_URL=https://your-service.example/spotify-playlist`.
-Without this setting, Vybe uses Spotify's public track list.
+### 🎚️ Make it sound right
+- Multi-band equalizer with custom presets
 
-The endpoint receives `GET /spotify-playlist?id=<Spotify playlist ID>`. It must
-return UTF-8 `text/csv` with track and artist columns, such as
-`Track Name,Artist Name(s)`. It can send `X-Playlist-Name` for the playlist name
-and `X-Playlist-Total` for the total number of playlist items. If Vybe cannot
-confirm the full list, it asks before saving a partial import. Keep provider
-credentials on your server. The build setting is a URL and is visible in the APK.
+### 📻 Radio
+- Browse internet radio stations by genre from all over the world
 
-- Bring your existing playlists into Vybe.
+### 📊 Your stats
+- See your most-played songs and artists, how long you've been listening, and shareable recap cards
+- There's a "Time Machine" screen for looking back month by month and year by year
 
-### 🎤 Synchronized Lyrics
-- Real-time synchronized lyrics.
-- Artwork-backed glow, highlighted lines, and smooth scrolling in portrait and landscape.
-- Tap a timed line to seek, adjust its timing, or browse and return to the current line.
-- Automatic provider matching with retry and saved lyrics for offline access.
-- Import UTF-8 `.lrc` or `.txt` files for songs missing from online providers. Only lyrics with real timestamps are synchronized.
+### 🔄 Sync between your own devices
+- Move playlists, favourites, and your library between phones over the same Wi-Fi. No cloud needed.
+- Prefer cloud sync? It's optional and runs on *your own* Firebase project, so your data stays in your account and not mine.
 
-### 🎚️ Audio Equalizer
-- Multi-band equalizer.
-- Custom audio presets.
-- Personalize your listening experience.
-
-### 📡 Internet Radio
-- Explore radio stations from different genres.
-- Discover stations from around the world.
-
-### 📊 Listening Statistics
-- Track your listening history.
-- Discover your most-played tracks and artists.
-- View listening time and personalized recap cards.
-
-### 📲 Peer-to-Peer Device Sync
-- Sync playlists, favourites, and your music library.
-- Connect devices over the same Wi-Fi network.
-- No third-party cloud server required for local sync.
-
-### 🎨 Beautiful Interface
-- Modern Material You design.
-- Dynamic colors on supported Android devices.
-- Dark, Light, and AMOLED themes.
-- Customizable accent colors.
-
-### 🌍 Multilingual Support
-- Localized interface in 20+ languages.
+### 🎨 Looks
+- Material You design with dynamic colors on supported phones
+- Light, Dark, and AMOLED black themes, plus custom accent colors
+- Translated into 20+ languages
 
 ---
 
-## 📱 Screenshots
+## 📲 Getting it
 
-<p align="center">
-  <!-- Add your app screenshots here -->
-  <i>Coming soon</i>
-</p>
+1. Grab the APK from the [latest release](https://github.com/Shubham-Loshali/Vybe/releases/tag/v10.6.4).
+2. Open it on your phone. Android will ask you to allow installs from your browser or file manager, which is normal for apps outside the Play Store.
+3. Done. Go listen to something.
 
----
+> You'll need **Android 7.0 (API 24) or newer**.
 
-## 📥 Installation
+<!--
+## 📸 Screenshots
 
-### Android
-
-<p align="center">
-  <a href="https://github.com/Shubham-Loshali/Vybe/releases/tag/v10.6.4">
-    <img src="https://img.shields.io/badge/GET%20VYBE%20NOW-Download%20APK-1DB954?style=for-the-badge&logo=android&logoColor=white" alt="Download APK" />
-  </a>
-</p>
-
-1. Visit the [Vybe v10.6.4 Release Page](https://github.com/Shubham-Loshali/Vybe/releases/tag/v10.6.4).
-2. Download the APK asset.
-3. Open the downloaded APK on your Android device.
-4. Follow the installation instructions.
-
-**Minimum Requirements**
-- Android 8.0 (API 26) or higher.
+Add some here! A row of 3-4 phone screenshots goes a long way.
+-->
 
 ---
 
-## 🛠️ Built With
+## 🧰 Under the hood
 
-| Technology | Purpose |
-|---|---|
-| Flutter | Cross-platform UI framework |
-| Dart | Programming language |
-| just_audio | Audio playback |
-| audio_service | Background audio |
-| audio_session | Audio session management |
-| Hive CE | Local database and caching |
-| GoRouter | Navigation and routing |
-| Dynamic Color | Material You theming |
-| RxDart | Reactive programming |
-| HTTP | Networking |
-
----
-
-## 🔒 Privacy First
-
-Your music experience should remain yours.
-
-Vybe is designed with privacy in mind:
-
-- No telemetry or analytics trackers.
-- No mandatory account or registration.
-- Playback history and preferences stored locally.
-- Local peer-to-peer synchronization.
-- No central cloud account required.
+| What | Why |
+|:---|:---|
+| Flutter + Dart | One codebase, smooth UI |
+| just_audio, audio_service, audio_session | Playback, background audio, and audio focus |
+| Hive CE | Local storage and caching |
+| GoRouter | Navigation |
+| dynamic_color | Material You theming |
+| RxDart | Reactive state for the player |
 
 ---
 
 ## 🤝 Contributing
 
-Vybe is open source, and contributions are welcome!
+Found a bug? Want a feature? PRs and issues are very welcome.
 
-Want to improve Vybe, fix bugs, or introduce new features? We'd love your help.
+1. Fork the repo
+2. Make a branch: `git checkout -b feature/cool-thing`
+3. Make your changes and commit: `git commit -m "feat: add cool thing"`
+4. Push it and open a Pull Request
 
-1. Fork this repository.
-2. Create a feature branch.
-   ```bash
-   git checkout -b feature/amazing-feature
-   ```
-3. Commit your changes.
-   ```bash
-   git commit -m "feat: add amazing feature"
-   ```
-4. Push your branch.
-   ```bash
-   git push origin feature/amazing-feature
-   ```
-5. Open a Pull Request.
-
-Before submitting, run:
+Before you open the PR, give these a run:
 
 ```bash
 flutter analyze
@@ -208,23 +129,16 @@ flutter test test/lyrics
 
 ---
 
+## 📜 Disclaimer
 
-## ⚠️ Disclaimer
-
-Vybe is an independent, open-source project and is not affiliated with, endorsed by, or officially connected to Spotify, YouTube, or any other music service.
-
-Third-party names and trademarks belong to their respective owners. Music availability and usage are subject to the respective providers' terms, licensing, and applicable copyright laws.
+Vybe is an independent project. It isn't affiliated with or endorsed by Spotify, YouTube, or any other music service. All names and trademarks belong to their owners. Where music comes from and how you use it is subject to those providers' terms and the copyright laws where you live.
 
 ---
 
-<p align="center">
-  <strong>Made with ❤️ for music lovers.</strong>
-  <br />
-  <h2 align="center">Find Your Vybe. 🎶</h2>
-</p>
+<div align="center">
 
-<p align="center">
-  <a href="https://github.com/Shubham-Loshali/Vybe/releases/tag/v10.6.4">⬇ Download Vybe</a>
-  &nbsp; • &nbsp;
-  <a href="https://github.com/Shubham-Loshali/Vybe">⭐ Star on GitHub</a>
-</p>
+Made for people who love music 🎶
+<br />
+If Vybe's useful to you, a ⭐ on the repo is a nice way to say thanks.
+
+</div>
