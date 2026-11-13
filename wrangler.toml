@@ -4,3 +4,4 @@ name = "vybe"
 main = "workers/update-policy/worker.mjs"
 compatibility_date = "2026-11-12"
 workers_dev = true
+previews = {}

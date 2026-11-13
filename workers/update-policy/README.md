@@ -5,6 +5,11 @@ on GitHub release `v10.6.5` before activating this policy. Copy `check.json` to
 the repository's `update` branch and deploy the same policy through the existing
 Cloudflare Worker's `/check` route with `Cache-Control: no-store`.
 
+The `update` branch includes its own `worker.mjs` and `wrangler.toml` so its
+Cloudflare preview check can build successfully. Keep `previews = {}` in both
+Wrangler configurations. Production deploys from `main`; `update` builds its
+own branch Preview while preserving the root fallback `check.json` URL.
+
 Clients with update checks block themselves when `version` is higher than their
 installed version. The policy requires `10.6.5` and explicitly lists versions
 `10.6.0` through `10.6.4` as blocked. Keep `force_shutdown` false: clients apply
