@@ -1,12 +1,14 @@
-# Version 10.6.3 rollout
+# Version 10.6.5 rollout
 
-Publish the release APK before activating this policy. Copy `check.json` to the
-repository's `update` branch and return the same JSON from the existing
+Build the companion release with version `10.6.5+208` and publish it as `Vybe.apk`
+on GitHub release `v10.6.5` before activating this policy. Copy `check.json` to
+the repository's `update` branch and deploy the same policy through the existing
 Cloudflare Worker's `/check` route with `Cache-Control: no-store`.
 
-The 10.6.2 public app blocks itself when `version` is higher than its current
-version. Keep `force_shutdown` false: the old client applies that flag to every
-version, including 10.6.3.
+Clients with update checks block themselves when `version` is higher than their
+installed version. The policy requires `10.6.5` and explicitly lists versions
+`10.6.0` through `10.6.4` as blocked. Keep `force_shutdown` false: clients apply
+that flag to every version, including the replacement release.
 
 The original public signing key is unavailable. This release distributes
 `Vybe.apk` with package `com.vybe.music.updated`, signed with the local key used
@@ -19,4 +21,4 @@ before a compatible in-place update can be produced.
 Previously distributed companion 10.6.2 builds disabled update checks and
 cannot be remotely shut down. Checks are enabled from 10.6.3 onward.
 
-Build number is 206. Preserve the companion signing key outside source control.
+Build number is 208. Preserve the companion signing key outside source control.

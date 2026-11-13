@@ -51,7 +51,27 @@ class SettingsPage extends StatelessWidget {
     );
 
     return Scaffold(
-      appBar: AppBar(title: Text(context.l10n!.settings)),
+      appBar: AppBar(
+        title: Text(
+          context.l10n!.settings,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontFamily: 'Figtree'),
+        ),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 10),
+            child: IconButton(
+              tooltip: 'Developers & support',
+              onPressed: () => context.push(NavigationManager.developersPath),
+              icon: Icon(
+                FluentIcons.people_team_24_regular,
+                color: primaryColor,
+              ),
+            ),
+          ),
+        ],
+      ),
       body: SingleChildScrollView(
         padding: commonSingleChildScrollViewPadding,
         child: content,

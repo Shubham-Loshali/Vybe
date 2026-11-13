@@ -2,10 +2,12 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:audio_service/audio_service.dart';
+import 'package:fluentui_system_icons/fluentui_system_icons.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:vybe/screens/home_page.dart';
+import 'package:vybe/services/cloud_sync_service.dart';
 import 'package:vybe/services/common_services.dart';
 import 'package:vybe/services/playlists_manager.dart';
 import 'package:vybe/services/settings_manager.dart';
@@ -18,6 +20,7 @@ import 'package:vybe/widgets/playlist_page/playlist_header.dart';
 import 'package:vybe/widgets/song_bar.dart';
 import 'package:vybe/widgets/spotify_download_icon.dart';
 
+import '../support/test_account_user.dart';
 import '../support/ui_fixture.dart';
 
 void main() {
@@ -69,13 +72,7 @@ void main() {
           for (final source in covers) {'highResImage': source},
         ],
       };
-      await tester.pumpWidget(
-        uiApp(
-          Center(
-            child: PlaylistCube(playlist),
-          ),
-        ),
-      );
+      await tester.pumpWidget(uiApp(Center(child: PlaylistCube(playlist))));
       await tester.pumpAndSettle();
       expect(find.byType(Image), findsNWidgets(4));
       expect(tester.takeException(), isNull);
@@ -103,13 +100,7 @@ void main() {
   });
 
   testWidgets('Liked Songs uses the purple cover at hero size', (tester) async {
-    await tester.pumpWidget(
-      uiApp(
-        const PlaylistCube(
-          {'isLikedSongs': true},
-        ),
-      ),
-    );
+    await tester.pumpWidget(uiApp(const PlaylistCube({'isLikedSongs': true})));
     expect(find.byType(LikedSongsCover), findsOneWidget);
     expect(tester.getSize(find.byType(LikedSongsCover)), const Size(220, 220));
   });
@@ -283,6 +274,94 @@ void main() {
     playlists = original;
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+    'home greeting follows accounts and sign-out without a name editor',
+    (tester) async {
+      final service = CloudSyncService.instance;
+      final settings = Hive.box('settings');
+      final previousUser = service.currentUser.value;
+      final previousPlaylists = playlists;
+      final previousSongs = globalSongs;
+      final previousWrapped = wrappedEnabled.value;
+      final previousRecommendations = externalRecommendations.value;
+      final previousSettings = {
+        for (final key in [
+          'customUserName',
+          'cloudUserDisplayName',
+          'auth_prompt_dismissed',
+        ])
+          key: settings.get(key),
+      };
+      addTearDown(() async {
+        service.currentUser.value = previousUser;
+        playlists = previousPlaylists;
+        globalSongs = previousSongs;
+        wrappedEnabled.value = previousWrapped;
+        externalRecommendations.value = previousRecommendations;
+        for (final entry in previousSettings.entries) {
+          if (entry.value == null) {
+            await settings.delete(entry.key);
+          } else {
+            await settings.put(entry.key, entry.value);
+          }
+        }
+      });
+      await settings.putAll({
+        'customUserName': 'Deepak',
+        'cloudUserDisplayName': 'Previous Account',
+        'auth_prompt_dismissed': true,
+      });
+      playlists = [];
+      globalSongs = [{}];
+      wrappedEnabled.value = false;
+      externalRecommendations.value = false;
+      service.currentUser.value = TestAccountUser(
+        uid: 'sasha',
+        displayName: 'Sasha Verma',
+      );
+
+      await tester.pumpWidget(uiApp(const HomePage()));
+      await tester.pumpAndSettle();
+      final greeting = find.descendant(
+        of: find.byType(AppBar),
+        matching: find.textContaining('Good '),
+      );
+      String greetingText() => tester.widget<Text>(greeting).data!;
+      expect(greetingText(), endsWith(', Sasha'));
+      expect(greetingText(), isNot(contains('Deepak')));
+      expect(find.byIcon(FluentIcons.edit_16_regular), findsNothing);
+      await tester.tap(greeting);
+      await tester.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsNothing);
+
+      // Keep Home mounted while the account or its profile changes.
+      service.currentUser.value = TestAccountUser(
+        uid: 'morgan',
+        displayName: 'Morgan Lee',
+      );
+      await tester.pumpAndSettle();
+      expect(greetingText(), endsWith(', Morgan'));
+      service.currentUser.value = TestAccountUser(
+        uid: 'morgan',
+        displayName: 'Sky Morgan',
+      );
+      await tester.pumpAndSettle();
+      expect(greetingText(), endsWith(', Sky'));
+      service.currentUser.value = TestAccountUser(
+        uid: 'sana',
+        email: 'sana.khan@example.com',
+      );
+      await tester.pumpAndSettle();
+      expect(greetingText(), endsWith(', Sana'));
+
+      service.currentUser.value = null;
+      await tester.pumpAndSettle();
+      expect(greetingText(), matches(r'^Good (morning|afternoon|evening)$'));
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
 
   testWidgets('a one-track playlist shows a singular song label', (
     tester,

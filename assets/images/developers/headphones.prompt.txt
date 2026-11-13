@@ -1,0 +1,6 @@
+Asset: headphones.png
+Created with the built-in image generation tool; transparent background.
+Purpose: standalone hero artwork for the Developers screen. All text and controls are native Flutter widgets.
+
+Prompt:
+Use case: product-mockup. Asset type: a transparent cutout illustration used in the top-right hero of the Vybe music app Developers screen. Render a premium pair of over-ear headphones in a dramatic three-quarter view, with the headband arch rising diagonally toward the upper right and both padded earcups toward the bottom. Matte black and dark charcoal materials, realistic thick soft padded cushions, glossy emerald green edge highlights and a vivid neon green illuminated ring on the front right earcup. Elegant high-end 3D product render. Subtle thin green elliptical orbital lines wrap behind the headphones. The object has strong clean silhouette readable at 165 pixels wide. Palette black, emerald, neon mint green only. Composition: entire headphones fully visible with a little breathing room, centered, no cropping. Background fully transparent. No text, no letters, no logos, no UI, no shadows extending across the canvas, no music notes, no extra objects. This is one standalone art asset, not a screenshot or a whole page.

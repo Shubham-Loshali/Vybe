@@ -17,7 +17,7 @@ class CloudSyncSettingsSection extends StatefulWidget {
 
 class _CloudSyncSettingsSectionState extends State<CloudSyncSettingsSection> {
   void _openAuthPage(BuildContext context) {
-    AuthDialog.show(context).then((_) {
+    AuthDialog.show(context, initiallySignUp: false).then((_) {
       if (mounted) setState(() {});
     });
   }
@@ -88,8 +88,7 @@ class _CloudSyncSettingsSectionState extends State<CloudSyncSettingsSection> {
                 return CustomBar(
                   'Sign In & Never Lose Playlists',
                   FluentIcons.person_arrow_right_24_regular,
-                  description:
-                      'Sign in with Google or Email to safely back up your data',
+                  description: 'Sign in with Google or Email to safely back up your data',
                   onTap: () => _openAuthPage(context),
                 );
               }

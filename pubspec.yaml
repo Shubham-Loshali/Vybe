@@ -5,7 +5,7 @@ repository: https://github.com/Shubham-Loshali/Vybe
 issue_tracker: https://github.com/Shubham-Loshali/Vybe/issues
 
 publish_to: 'none'
-version: 10.6.4+207
+version: 10.6.5+208
 
 environment:
   sdk: '>=3.13.0 <4.0.0'
@@ -67,6 +67,10 @@ flutter:
     - assets/licenses/
     - assets/icons/vybe_icon.png
     - assets/icons/ic_launcher.png
+    - assets/images/developers/headphones.png
+    - assets/images/developers/github.png
+    - assets/images/developers/deepak.png
+    - assets/images/developers/shubham.png
 
   fonts:
     - family: Figtree

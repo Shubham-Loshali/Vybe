@@ -9,7 +9,7 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:hive_ce/hive_ce.dart';
 import 'package:vybe/main.dart' show logger;
 import 'package:vybe/services/library_merge_service.dart';
-import 'package:vybe/services/settings_manager.dart';
+import 'package:vybe/utilities/auth_error_messages.dart';
 
 enum CloudSyncState { idle, syncing, success, error }
 
@@ -41,30 +41,20 @@ class CloudSyncService {
         lastSyncedAt.value = DateTime.tryParse(savedTime);
       }
 
-      FirebaseAuth.instance.authStateChanges().listen((user) {
+      FirebaseAuth.instance.userChanges().listen((user) {
+        final previousUid = currentUser.value?.uid;
         if (user != null && !user.emailVerified) {
           currentUser.value = null;
+          _stopWatchingLocalChanges();
           return;
         }
         currentUser.value = user;
-        if (user != null) {
-          if (user.displayName != null && user.displayName!.trim().isNotEmpty) {
-            final name = user.displayName!.trim();
-            Hive.box('settings').put('cloudUserDisplayName', name);
-            if (userNameNotifier.value.trim().isEmpty) {
-              setUserName(name.split(' ').first);
-            }
-          } else if (user.email != null && user.email!.isNotEmpty) {
-            final raw = user.email!.split('@').first.trim();
-            if (raw.isNotEmpty && userNameNotifier.value.trim().isEmpty) {
-              final capitalized = raw[0].toUpperCase() + raw.substring(1);
-              setUserName(capitalized);
-            }
-          }
+        if (user == null) {
+          _stopWatchingLocalChanges();
+        } else if (user.uid != previousUid) {
+          // Profile updates refresh the greeting without re-importing a library.
           unawaited(syncFromCloud());
           _startWatchingLocalChanges();
-        } else {
-          _stopWatchingLocalChanges();
         }
       });
       logger.log('Firebase CloudSyncService initialised successfully');
@@ -78,9 +68,12 @@ class CloudSyncService {
   /// Sign in using Google Account
   Future<bool> signInWithGoogle() async {
     if (!isFirebaseConfigured) {
-      syncMessage.value = 'Firebase is not yet configured.';
+      syncState.value = CloudSyncState.error;
+      syncMessage.value =
+          'Account sign-in isn’t available right now. Please try again later.';
       return false;
     }
+    syncMessage.value = null;
     syncState.value = CloudSyncState.syncing;
     try {
       final googleUser = await GoogleSignIn().signIn();
@@ -101,8 +94,10 @@ class CloudSyncService {
       return true;
     } catch (e, stackTrace) {
       logger.log('Google Sign-In failed', error: e, stackTrace: stackTrace);
-      syncState.value = CloudSyncState.error;
-      syncMessage.value = 'Sign-in failed: $e';
+      final message = googleSignInErrorMessage(e);
+      syncState.value =
+          message == null ? CloudSyncState.idle : CloudSyncState.error;
+      syncMessage.value = message;
       return false;
     }
   }
@@ -215,7 +210,6 @@ class CloudSyncService {
     if (isFirebaseConfigured) {
       await FirebaseAuth.instance.signOut();
     }
-    await Hive.box('settings').delete('cloudUserDisplayName');
     currentUser.value = null;
     syncState.value = CloudSyncState.idle;
     syncMessage.value = null;

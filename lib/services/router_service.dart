@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:vybe/screens/artist_page.dart';
 import 'package:vybe/screens/bottom_navigation_page.dart';
+import 'package:vybe/screens/developers_page.dart';
 import 'package:vybe/screens/equalizer_page.dart';
 import 'package:vybe/screens/home_page.dart';
 import 'package:vybe/screens/import_spotify_playlist_page.dart';
@@ -116,6 +117,7 @@ class NavigationManager {
   static const String homePath = '/home';
   static const String timeMachinePath = '$homePath/timeMachine';
   static const String settingsPath = '/settings';
+  static const String developersPath = '$settingsPath/developers';
   static const String searchPath = '/search';
   static const String libraryPath = '/library';
   static const String importPath = '/import-playlist';
@@ -248,6 +250,11 @@ class NavigationManager {
               return getPage(child: const SettingsPage(), state: state);
             },
             routes: [
+              GoRoute(
+                path: 'developers',
+                pageBuilder: (context, state) =>
+                    _pushPage(child: const DevelopersPage(), state: state),
+              ),
               GoRoute(
                 path: 'equalizer',
                 pageBuilder: (context, state) =>

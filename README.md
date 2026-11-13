@@ -13,8 +13,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Shubham-Loshali/Vybe/releases/tag/v10.6.4">
-    <img src="https://img.shields.io/badge/⬇%20DOWNLOAD%20VYBE%20FOR%20ANDROID-GET%20V10.6.4-16C75B?style=for-the-badge&logo=android&logoColor=white&labelColor=111111" alt="Download Vybe" />
+  <a href="https://github.com/Shubham-Loshali/Vybe/releases/tag/v10.6.5">
+    <img src="https://img.shields.io/badge/⬇%20DOWNLOAD%20VYBE%20FOR%20ANDROID-GET%20V10.6.5-16C75B?style=for-the-badge&logo=android&logoColor=white&labelColor=111111" alt="Download Vybe" />
   </a>
 </p>
 
@@ -29,7 +29,7 @@
   <img src="https://img.shields.io/badge/Platform-Android-brightgreen?style=flat-square&logo=android" alt="Platform: Android" />
   <img src="https://img.shields.io/badge/Built%20With-Flutter-blue?style=flat-square&logo=flutter" alt="Built With Flutter" />
   <img src="https://img.shields.io/badge/License-GPL--3.0-orange?style=flat-square" alt="License: GPL-3.0" />
-  <img src="https://img.shields.io/badge/Version-10.6.4-purple?style=flat-square" alt="Version 10.6.4" />
+  <img src="https://img.shields.io/badge/Version-10.6.5-purple?style=flat-square" alt="Version 10.6.5" />
 </p>
 
 ---
@@ -87,7 +87,7 @@ It also does a bunch of other stuff, which is below.
 
 ## 📲 Getting it
 
-1. **Grab the APK** from the [latest release](https://github.com/Shubham-Loshali/Vybe/releases/tag/v10.6.4).
+1. **Grab the APK** from the [latest release](https://github.com/Shubham-Loshali/Vybe/releases/tag/v10.6.5).
 2. **Open it on your phone.** Android will ask you to allow installs from your browser or file manager, which is normal for apps outside the Play Store.
 3. **Done.** Go listen to something.
 
