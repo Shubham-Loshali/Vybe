@@ -65,7 +65,8 @@ flutter:
   assets:
     - assets/audio/opening.mp3
     - assets/licenses/
-    - assets/icons/
+    - assets/icons/vybe_icon.png
+    - assets/icons/ic_launcher.png
 
   fonts:
     - family: Figtree

@@ -152,11 +152,7 @@ class CloudSyncService {
   }
 
   /// Register a new account using Email and Password and send verification email
-  Future<bool> signUpWithEmail(
-    String email,
-    String password, {
-    String? displayName,
-  }) async {
+  Future<bool> signUpWithEmail(String email, String password) async {
     if (!isFirebaseConfigured) {
       syncMessage.value = 'Firebase is not yet configured.';
       return false;
@@ -171,14 +167,6 @@ class CloudSyncService {
 
       final user = credential.user;
       if (user != null) {
-        if (displayName != null && displayName.trim().isNotEmpty) {
-          final trimmedName = displayName.trim();
-          try {
-            await user.updateDisplayName(trimmedName);
-          } catch (_) {}
-          await Hive.box('settings').put('cloudUserDisplayName', trimmedName);
-          setUserName(trimmedName.split(' ').first);
-        }
         await user.sendEmailVerification();
         await FirebaseAuth.instance.signOut();
         currentUser.value = null;
