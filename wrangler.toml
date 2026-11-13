@@ -1,5 +1,6 @@
-# Build the fallback policy branch as a Worker version without deploying production.
+# Build the fallback policy on its own branch Preview, separate from production.
 name = "vybe"
 main = "worker.mjs"
 compatibility_date = "2026-11-12"
 workers_dev = true
+previews = {}
