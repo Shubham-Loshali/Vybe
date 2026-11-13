@@ -1,33 +1,35 @@
-<div align="center">
+# 🎵 Vybe
 
-<img src="assets/icons/ic_launcher.png" alt="Vybe logo" width="120" />
+<p align="center">
+  <img src="assets/icons/ic_launcher.png" alt="Vybe Logo" width="140" />
+</p>
 
-# Vybe 🎧
+<h1 align="center">Your Music. Your Rules. Your Vybe.</h1>
 
-**A music player for people who just want to press play.**
-<br />
-No ads. No subscription. No "create an account to continue."
+<p align="center">
+  <strong>Done with ads? Ready for a better music experience?</strong>
+  <br />
+  Stream, discover, download, and enjoy your favourite music — without interruptions.
 
-<br />
 
-<a href="https://github.com/Shubham-Loshali/Vybe/releases/tag/v10.6.4">
-  <img src="https://img.shields.io/badge/Download-v10.6.4-16C75B?style=for-the-badge&logo=android&logoColor=white&labelColor=111111" alt="Download Vybe for Android" />
-</a>
+<p align="center">
+  <a href="https://github.com/Shubham-Loshali/Vybe/releases/tag/v10.6.4">
+    <img src="https://img.shields.io/badge/⬇%20DOWNLOAD%20VYBE%20FOR%20ANDROID-GET%20V10.6.4-16C75B?style=for-the-badge&logo=android&logoColor=white&labelColor=111111" alt="Download Vybe" />
+  </a>
+</p>
+<p align="center">
+  <a href="https://github.com/Shubham-Loshali/Vybe/releases">All Releases</a> •
+  <a href="#-features">Features</a> •
+  <a href="#-installation">Installation</a> •
+  <a href="#-contributing">Contribute</a>
+</p>
 
-<br /><br />
-
-<img src="https://img.shields.io/badge/Platform-Android-brightgreen?style=flat-square&logo=android" alt="Android" />
-<img src="https://img.shields.io/badge/Built%20with-Flutter-02569B?style=flat-square&logo=flutter" alt="Flutter" />
-<img src="https://img.shields.io/badge/License-GPL--3.0-orange?style=flat-square" alt="GPL-3.0" />
-
-<br /><br />
-
-[What is this?](#-what-is-this) ·
-[Features](#-what-it-can-do) ·
-[Install](#-getting-it) ·
-[Contribute](#-contributing)
-
-</div>
+<p align="center">
+  <img src="https://img.shields.io/badge/Platform-Android-brightgreen?style=flat-square&logo=android" />
+  <img src="https://img.shields.io/badge/Built%20With-Flutter-blue?style=flat-square&logo=flutter" />
+  <img src="https://img.shields.io/badge/License-GPL--3.0-orange?style=flat-square" />
+  <img src="https://img.shields.io/badge/Version-10.6.4-purple?style=flat-square" />
+</p>
 
 ---
 
