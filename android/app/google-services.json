@@ -41,6 +41,64 @@
           ]
         }
       }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:272874776400:android:dd555b730d8af8a5582e55",
+        "android_client_info": {
+          "package_name": "com.vybe.music.updated"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "272874776400-lgb868qr3tpvgf9nhntgm0d7aiffgl0o.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBYx0kmJwShk5KD1yYAAC5AfhrLy_wEQRo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "272874776400-lgb868qr3tpvgf9nhntgm0d7aiffgl0o.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:272874776400:android:dd555b730d8af8a5582e55",
+        "android_client_info": {
+          "package_name": "com.vybe.music.fdroid"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "272874776400-lgb868qr3tpvgf9nhntgm0d7aiffgl0o.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBYx0kmJwShk5KD1yYAAC5AfhrLy_wEQRo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "272874776400-lgb868qr3tpvgf9nhntgm0d7aiffgl0o.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
     }
   ],
   "configuration_version": "1"

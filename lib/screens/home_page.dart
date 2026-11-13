@@ -32,6 +32,7 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
+  static bool _hasPromptedAuthThisSession = false;
   late final Future<List> _suggestedPlaylistsFuture;
   late Future<List> _recommendedSongsFuture;
 
@@ -46,9 +47,11 @@ class _HomePageState extends State<HomePage> {
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+      if (_hasPromptedAuthThisSession) return;
       final isDismissed =
           Hive.box('settings').get('auth_prompt_dismissed', defaultValue: false);
       if (CloudSyncService.instance.currentUser.value == null && !isDismissed) {
+        _hasPromptedAuthThisSession = true;
         AuthDialog.show(context);
       }
     });
@@ -111,9 +114,7 @@ class _HomePageState extends State<HomePage> {
           FilledButton(
             onPressed: () {
               final newName = controller.text.trim();
-              if (newName.isNotEmpty) {
-                setUserName(newName);
-              }
+              setUserName(newName);
               Navigator.pop(dialogContext);
               setState(() {});
             },

@@ -1,11 +1,11 @@
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/foundation.dart';
+import 'package:rxdart/rxdart.dart';
 import 'package:vybe/services/common_services.dart';
 import 'package:vybe/services/playlists_manager.dart';
 import 'package:vybe/services/settings_manager.dart';
 import 'package:vybe/utilities/map_utils.dart';
 import 'package:vybe/utilities/mediaitem.dart';
-import 'package:rxdart/rxdart.dart';
 
 abstract interface class AndroidAutoHost {
   List<Map> get browserQueue;

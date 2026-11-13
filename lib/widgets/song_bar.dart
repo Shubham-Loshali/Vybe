@@ -420,7 +420,7 @@ class _SongBarState extends State<SongBar> {
         child: Padding(
           padding:
               widget.barPadding ??
-              const EdgeInsetsDirectional.symmetric(vertical: 8, horizontal: 0),
+              const EdgeInsetsDirectional.symmetric(vertical: 8),
           child: Row(
             children: [
               if (widget.rank != null) ...[

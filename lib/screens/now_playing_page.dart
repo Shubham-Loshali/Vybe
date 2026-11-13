@@ -4,6 +4,7 @@ import 'package:audio_service/audio_service.dart';
 import 'package:fluentui_system_icons/fluentui_system_icons.dart';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:vybe/extensions/l10n.dart';
 import 'package:vybe/main.dart';
 import 'package:vybe/services/common_services.dart';
@@ -19,7 +20,6 @@ import 'package:vybe/widgets/now_playing/spotify_bottom_row.dart';
 import 'package:vybe/widgets/now_playing/spotify_lyrics_card.dart';
 import 'package:vybe/widgets/queue_list_view.dart';
 import 'package:vybe/widgets/song_artwork.dart';
-import 'package:share_plus/share_plus.dart';
 
 class NowPlayingPage extends StatefulWidget {
   const NowPlayingPage({super.key});
@@ -387,7 +387,7 @@ class _DesktopLayout extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isLive = metadata.extras?['isLive'] ?? false;
-    final double imageSize = min(size.height * 0.4, 360).toDouble();
+    final imageSize = min(size.height * 0.4, 360).toDouble();
 
     return Row(
       children: [

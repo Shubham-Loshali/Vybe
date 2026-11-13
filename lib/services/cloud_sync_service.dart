@@ -9,7 +9,6 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:hive_ce/hive_ce.dart';
 import 'package:vybe/main.dart' show logger;
 import 'package:vybe/services/library_merge_service.dart';
-import 'package:vybe/services/local_sync/sync_data.dart';
 import 'package:vybe/services/settings_manager.dart';
 
 enum CloudSyncState { idle, syncing, success, error }
@@ -55,6 +54,12 @@ class CloudSyncService {
             if (userNameNotifier.value.trim().isEmpty) {
               setUserName(name.split(' ').first);
             }
+          } else if (user.email != null && user.email!.isNotEmpty) {
+            final raw = user.email!.split('@').first.trim();
+            if (raw.isNotEmpty && userNameNotifier.value.trim().isEmpty) {
+              final capitalized = raw[0].toUpperCase() + raw.substring(1);
+              setUserName(capitalized);
+            }
           }
           unawaited(syncFromCloud());
           _startWatchingLocalChanges();
@@ -97,7 +102,7 @@ class CloudSyncService {
     } catch (e, stackTrace) {
       logger.log('Google Sign-In failed', error: e, stackTrace: stackTrace);
       syncState.value = CloudSyncState.error;
-      syncMessage.value = 'Sign-in failed: ${e.toString()}';
+      syncMessage.value = 'Sign-in failed: $e';
       return false;
     }
   }
@@ -210,6 +215,7 @@ class CloudSyncService {
     if (isFirebaseConfigured) {
       await FirebaseAuth.instance.signOut();
     }
+    await Hive.box('settings').delete('cloudUserDisplayName');
     currentUser.value = null;
     syncState.value = CloudSyncState.idle;
     syncMessage.value = null;

@@ -50,7 +50,8 @@ ThemeData getAppTheme(ColorScheme colorScheme) {
       : ThemeData.dark();
 
   final isLight = colorScheme.brightness == Brightness.light;
-  final isPureBlack = false;
+  final isPureBlack =
+      colorScheme.brightness == Brightness.dark && usePureBlackColor.value;
 
   // Pure black & Spotify dark theme colors
   const pureBlack = Color(0xFF000000);

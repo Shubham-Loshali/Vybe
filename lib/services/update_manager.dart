@@ -293,13 +293,13 @@ bool isLatestVersionHigher(String appVersion, String latestVersion) {
   final cleanApp = appVersion
       .trim()
       .toLowerCase()
-      .replaceAll(RegExp(r'^v'), '')
+      .replaceAll(RegExp('^v'), '')
       .split('+')[0]
       .trim();
   final cleanLatest = latestVersion
       .trim()
       .toLowerCase()
-      .replaceAll(RegExp(r'^v'), '')
+      .replaceAll(RegExp('^v'), '')
       .split('+')[0]
       .trim();
 

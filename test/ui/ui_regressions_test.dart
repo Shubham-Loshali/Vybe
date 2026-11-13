@@ -72,7 +72,7 @@ void main() {
       await tester.pumpWidget(
         uiApp(
           Center(
-            child: PlaylistCube(playlist, size: 220, showTypeLabel: false),
+            child: PlaylistCube(playlist),
           ),
         ),
       );
@@ -107,8 +107,6 @@ void main() {
       uiApp(
         const PlaylistCube(
           {'isLikedSongs': true},
-          size: 220,
-          showTypeLabel: false,
         ),
       ),
     );

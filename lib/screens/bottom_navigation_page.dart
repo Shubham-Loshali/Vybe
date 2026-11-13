@@ -350,9 +350,9 @@ class _ForceUpdateBlockingScreen extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  TextButton(
+                  const TextButton(
                     onPressed: SystemNavigator.pop,
-                    child: const Text(
+                    child: Text(
                       'Exit App',
                       style: TextStyle(
                         color: Color(0xFFB3B3B3),

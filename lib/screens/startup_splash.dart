@@ -325,8 +325,6 @@ class _HaloPainter extends CustomPainter {
       ..strokeCap = StrokeCap.round
       ..strokeWidth = 1.2
       ..shader = SweepGradient(
-        startAngle: 0,
-        endAngle: math.pi * 2,
         transform: GradientRotation(angle),
         colors: [
           const Color(0xFF73FFA1).withValues(alpha: 0),
@@ -335,18 +333,20 @@ class _HaloPainter extends CustomPainter {
         ],
         stops: const [0, 0.70, 1],
       ).createShader(Rect.fromCircle(center: center, radius: radius));
-    canvas.drawArc(
-      Rect.fromCircle(center: center, radius: radius),
-      angle + math.pi,
-      math.pi * reveal,
-      false,
-      sweep,
-    );
-    canvas.drawCircle(
-      center + Offset(math.cos(angle), math.sin(angle)) * radius,
-      1.8,
-      Paint()..color = const Color(0xFF9AFBB5).withValues(alpha: 0.85 * reveal),
-    );
+    canvas
+      ..drawArc(
+        Rect.fromCircle(center: center, radius: radius),
+        angle + math.pi,
+        math.pi * reveal,
+        false,
+        sweep,
+      )
+      ..drawCircle(
+        center + Offset(math.cos(angle), math.sin(angle)) * radius,
+        1.8,
+        Paint()
+          ..color = const Color(0xFF9AFBB5).withValues(alpha: 0.85 * reveal),
+      );
   }
 
   @override

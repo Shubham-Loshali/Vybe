@@ -354,6 +354,8 @@ class _AuthDialogState extends State<AuthDialog> {
           ],
         ),
       ),
+      actionsOverflowAlignment: OverflowBarAlignment.end,
+      actionsOverflowButtonSpacing: 4,
       actions: [
         TextButton(
           onPressed: () {

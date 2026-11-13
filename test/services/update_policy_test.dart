@@ -16,12 +16,13 @@ void main() {
       expect(target, appVersion);
       expect(policy['force_shutdown'], isFalse);
       expect(isLatestVersionHigher('10.6.2', target), isTrue);
-      expect(isLatestVersionHigher('10.6.3', target), isFalse);
-      expect(isLatestVersionHigher('v10.6.3+206', target), isFalse);
+      expect(isLatestVersionHigher('10.6.3', target), isTrue);
+      expect(isLatestVersionHigher('v10.6.3+206', target), isTrue);
       expect(isLatestVersionHigher('10.6.4', target), isFalse);
+      expect(isLatestVersionHigher('v10.6.4+207', target), isFalse);
       for (final name in ['url', 'arm64url', 'companion_url']) {
         expect(Uri.parse(policy[name] as String).scheme, 'https');
-        expect(policy[name], contains('/v10.6.3/'));
+        expect(policy[name], contains('/v10.6.4/'));
       }
     },
   );
