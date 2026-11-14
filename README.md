@@ -6,6 +6,7 @@
 
 <h1 align="center">Your Music. Your Rules. Your Vybe.</h1>
 
+
 <p align="center">
   <strong>Done with ads? Ready for a better music experience?</strong>
   <br />
