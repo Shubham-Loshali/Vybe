@@ -25,8 +25,11 @@ import 'package:vybe/utilities/queue_entry_utils.dart';
 
 /// Receives a guest's playback action so it can be sent to the session host
 /// instead of being applied locally.
-typedef RemoteCommandSink =
-    void Function(String type, {Duration? position, Map? song});
+typedef RemoteCommandSink = void Function(
+  String type, {
+  Duration? position,
+  Map? song,
+});
 
 class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
   VybeAudioHandler() {
@@ -95,8 +98,9 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
 
   /// The player currently producing the audible, tracked song.
   AudioPlayer get audioPlayer => _activePlayer.value;
-  AudioPlayer get _standbyPlayer =>
-      identical(audioPlayer, _primaryPlayer) ? _secondaryPlayer : _primaryPlayer;
+  AudioPlayer get _standbyPlayer => identical(audioPlayer, _primaryPlayer)
+      ? _secondaryPlayer
+      : _primaryPlayer;
   List<AudioPlayer> get _allPlayers => [_primaryPlayer, _secondaryPlayer];
   AndroidEqualizer? get _androidEqualizer => _equalizers[audioPlayer];
   bool get _equalizerInitialized {
@@ -110,9 +114,7 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
 
   // User-chosen volume. Kept separately from the players' own volume because
   // a crossfade ramps the players' volume up and down underneath it.
-  final BehaviorSubject<double> _userVolume = BehaviorSubject<double>.seeded(
-    1,
-  );
+  final BehaviorSubject<double> _userVolume = BehaviorSubject<double>.seeded(1);
 
   // Crossfade state.
   static const Duration _crossfadeLeadTime = Duration(seconds: 15);
@@ -169,6 +171,7 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
   bool _pendingPlaybackStateUpdate = false;
   bool _pendingForcedPlaybackStateUpdate = false;
   int _songTransitionCounter = 0;
+  Future<void>? _pausingForTrackChange;
   bool _queuePlayWhenReady = true;
   bool _completionEventPending = false;
   bool _completionHandlerLoadStarted = false;
@@ -333,7 +336,8 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
 
     _fromActive((player) => player.durationStream).listen(
       (duration) {
-        if (_currentQueueIndex >= 0 &&
+        if (_currentLoadingIndex < 0 &&
+            _currentQueueIndex >= 0 &&
             _currentQueueIndex < _queueList.length &&
             duration != null &&
             _playerSourceMatchesCurrentSong()) {
@@ -354,7 +358,8 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
           state,
           currentSong: currentSong,
         );
-        if (state.processingState == ProcessingState.idle &&
+        if (_currentLoadingIndex < 0 &&
+            state.processingState == ProcessingState.idle &&
             !state.playing &&
             _lastError != null) {
           Future.microtask(_handlePlaybackError);
@@ -837,6 +842,7 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
   }
 
   void _updatePlaybackState({bool force = false}) {
+    if (_currentLoadingIndex >= 0) return;
     if (_isUpdatingState) {
       _pendingPlaybackStateUpdate = true;
       _pendingForcedPlaybackStateUpdate |= force;
@@ -927,6 +933,7 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
   void _handleProcessingStateChange(ProcessingState state) {
     try {
       if (state == ProcessingState.completed) {
+        if (_currentLoadingIndex >= 0) return;
         if (sleepTimerEndOfSong) {
           sleepTimerExpired = true;
           sleepTimerEndOfSong = false;
@@ -1004,9 +1011,11 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
 
     if (_canRetryPlayback()) {
       final failedSongIndex = _currentQueueIndex;
+      final failedTransition = _songTransitionCounter;
       Future.delayed(_errorRetryDelay, () {
         // Only retry if still on the same song (user didn't manually change tracks)
-        if (_currentQueueIndex == failedSongIndex) {
+        if (_songTransitionCounter == failedTransition &&
+            _currentQueueIndex == failedSongIndex) {
           skipToNext();
         }
       });
@@ -1330,7 +1339,9 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
       }
 
       _hydrateQueueEntryIds();
-      _updateQueueMediaItems(publishCurrentItem: !replace || _queueList.isEmpty);
+      _updateQueueMediaItems(
+        publishCurrentItem: !replace || _queueList.isEmpty,
+      );
 
       if (targetQueueIndex != null) {
         await _playFromQueue(targetQueueIndex);
@@ -1484,6 +1495,8 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
       _queueMapStream.add(List.unmodifiable(_queueList));
 
       if (publishCurrentItem &&
+          _currentLoadingIndex < 0 &&
+          _playerSourceMatchesCurrentSong() &&
           _currentQueueIndex >= 0 &&
           _currentQueueIndex < mediaItems.length) {
         final currentMediaItem = mediaItems[_currentQueueIndex];
@@ -1498,23 +1511,8 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
     }
   }
 
-  void _emitOptimisticLoadingState({
-    Map? song,
-    int? queueIndex,
-    bool includeMediaItem = false,
-    String? mediaId,
-  }) {
+  void _emitLoadingState({int? queueIndex}) {
     try {
-      if (includeMediaItem && song != null) {
-        var immediateMediaItem = mapToMediaItem(song);
-        if (mediaId != null) {
-          immediateMediaItem = immediateMediaItem.copyWith(id: mediaId);
-        }
-        Future.microtask(() {
-          mediaItem.add(immediateMediaItem);
-        });
-      }
-
       playbackState.add(
         PlaybackState(
           controls: [
@@ -1587,37 +1585,14 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
     _currentLoadingTransitionId = currentTransitionId;
     _queuePlayWhenReady = playWhenReady;
 
-    // Immediately pause any active playback across all players so old audio does not keep playing
-    // while the new track's stream URL is being resolved and prepared.
     try {
-      for (final player in _allPlayers) {
-        if (_isStaleTransition(currentTransitionId)) return;
-        if (player.playing) {
-          await player.pause();
-        }
-      }
-    } catch (_) {}
-
-    try {
-      if (_isStaleTransition(currentTransitionId)) return;
       final previousQueueIndex = _currentQueueIndex;
-      final previousMediaItem = mediaItem.valueOrNull;
       _currentQueueIndex = index;
-
-      final currentSong = _queueList[_currentQueueIndex];
-      final currentMediaItem = _getMediaItemForQueue(currentSong);
-      final uniqueId = currentMediaItem.id;
-
-      mediaItem.add(currentMediaItem);
-
-      _emitOptimisticLoadingState(
-        queueIndex: _currentQueueIndex,
-        mediaId: uniqueId,
-      );
+      _emitLoadingState(queueIndex: index);
 
       final success = await playSong(
         _queueList[index],
-        mediaId: uniqueId,
+        mediaId: _queueEntryIds.ensureId(_queueList[index]),
         transitionId: currentTransitionId,
         playWhenReady: playWhenReady,
       );
@@ -1630,9 +1605,6 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
           _emitSyncEvent('song');
         } else {
           _currentQueueIndex = previousQueueIndex;
-          if (previousMediaItem != null) {
-            mediaItem.add(previousMediaItem);
-          }
           for (final player in _allPlayers) {
             if (_isStaleTransition(currentTransitionId)) return;
             try {
@@ -1640,7 +1612,6 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
             } catch (_) {}
           }
           if (!_isStaleTransition(currentTransitionId)) {
-            _updatePlaybackState();
             _handlePlaybackError();
           }
         }
@@ -1653,6 +1624,7 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
       if (currentTransitionId == _currentLoadingTransitionId) {
         _currentLoadingIndex = -1;
         _currentLoadingTransitionId = -1;
+        _updatePlaybackState(force: true);
       }
     }
   }
@@ -1931,9 +1903,11 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
   }
 
   Future<void> _playLocal() async {
-    _emitSyncEvent('play');
-    if (isDesktopPlatform && _currentLoadingIndex >= 0)
+    if (_currentLoadingIndex >= 0) {
       _queuePlayWhenReady = true;
+      return;
+    }
+    _emitSyncEvent('play');
     try {
       if (audioPlayer.audioSource == null) {
         final recentSong = latestResumableSong();
@@ -1971,8 +1945,10 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
   }
 
   Future<void> _pauseLocal() async {
-    if (isDesktopPlatform && _currentLoadingIndex >= 0)
+    if (_currentLoadingIndex >= 0) {
       _queuePlayWhenReady = false;
+      return;
+    }
     _finishCrossfadeNow();
     try {
       listeningStatsService.recordListeningSessionProgress(
@@ -2137,6 +2113,22 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
     return transitionId != null && transitionId != _currentLoadingTransitionId;
   }
 
+  Future<void> _pauseForTrackChange() => _pausingForTrackChange ??=
+      _pausePlayingSources().whenComplete(() => _pausingForTrackChange = null);
+
+  Future<void> _pausePlayingSources() async {
+    for (final player in _allPlayers) {
+      if (!player.playing) continue;
+      listeningStatsService.recordListeningSessionProgress(wasPlaying: true);
+      try {
+        await player.pause();
+      } catch (error) {
+        logger.log('Could not pause the previous track', error: error);
+        await player.stop();
+      }
+    }
+  }
+
   Future<bool> playSong(
     Map song, {
     String? mediaId,
@@ -2159,28 +2151,15 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
       }
 
       _lastError = null;
-      _emitOptimisticLoadingState(
-        song: songData,
-        includeMediaItem: transitionId == null,
-        mediaId: mediaId,
-      );
-      for (final player in _allPlayers) {
-        if (_isStaleTransition(transitionId)) return false;
-        try {
-          if (player.playing) {
-            listeningStatsService.recordListeningSessionProgress(
-              wasPlaying: player.playing,
-            );
-            await player.pause();
-          }
-        } catch (_) {}
-      }
+      if (transitionId == null) _emitLoadingState();
+      await _pauseForTrackChange();
+      if (_isStaleTransition(transitionId)) return false;
 
       final ytid = songData['ytid']?.toString();
       final sponsorBlockFuture =
           (sponsorBlockSupport.value && !_syncSessionActive && ytid != null)
-              ? getSkipSegments(ytid)
-              : Future.value(<Map<String, int>>[]);
+          ? getSkipSegments(ytid)
+          : Future.value(<Map<String, int>>[]);
 
       final playback = await _resolvePlaybackSource(songData);
 
@@ -2336,7 +2315,9 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
       }
     }
 
-    logger.log('Offline audio file not found for: ${song['ytid']} ($audioPath)');
+    logger.log(
+      'Offline audio file not found for: ${song['ytid']} ($audioPath)',
+    );
     return null;
   }
 
@@ -2362,12 +2343,24 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
       // source, not whatever session we're about to finish.
       final wasPlayingBeforeSwap = audioPlayer.playing;
 
-      final loadedDuration = await audioPlayer
+      final player = audioPlayer;
+      final loadedDuration = await player
           .setAudioSource(audioSource)
           .timeout(_songTransitionTimeout);
 
       // The newer transition owns both players once this load is superseded.
-      if (_isStaleTransition(transitionId)) return false;
+      if (_isStaleTransition(transitionId) || !identical(player, audioPlayer)) {
+        return false;
+      }
+      final loadedTag = player.sequenceState.currentSource?.tag;
+      if (loadedTag is! MediaItem ||
+          loadedTag.extras?['ytid']?.toString() != song['ytid']?.toString()) {
+        _lastError = 'The player did not load the requested song';
+        return false;
+      }
+      mediaItem.add(
+        mediaId == null ? loadedTag : loadedTag.copyWith(id: mediaId),
+      );
 
       final resolvedDuration = loadedDuration ?? audioPlayer.duration;
       if (resolvedDuration != null && _playerSourceMatchesCurrentSong()) {
@@ -2394,12 +2387,17 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
               audioPlayer.playing &&
               audioPlayer.processingState == ProcessingState.ready,
         );
-      final startPlayback = transitionId == null || !isDesktopPlatform
+      final startPlayback = transitionId == null
           ? playWhenReady
           : _queuePlayWhenReady;
+      final playbackRevision = _songTransitionCounter;
       if (startPlayback)
         unawaited(
-          audioPlayer.play().catchError((Object e, StackTrace stackTrace) {
+          player.play().catchError((Object e, StackTrace stackTrace) {
+            if (playbackRevision != _songTransitionCounter ||
+                !identical(player, audioPlayer)) {
+              return;
+            }
             logger.log(
               'Error starting playback',
               error: e,
@@ -3131,7 +3129,7 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
       _currentLoadingIndex = -1;
       _currentLoadingTransitionId = -1;
       _resetPreloadingState();
-      _updateQueueMediaItems();
+      _updateQueueMediaItems(publishCurrentItem: false);
       await _playFromQueue(0, playWhenReady: playWhenReady, fromSync: true);
       return isCurrentSongLoaded && currentSong?['ytid']?.toString() == ytid;
     } catch (e, stackTrace) {
@@ -3453,8 +3451,7 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
       song,
       duration: incoming.duration,
       isPlaying:
-          incoming.playing &&
-          incoming.processingState == ProcessingState.ready,
+          incoming.playing && incoming.processingState == ProcessingState.ready,
     );
     unawaited(updateRecentlyPlayed(song['ytid'], songFallback: song));
     if (!prepared.isOffline) {
