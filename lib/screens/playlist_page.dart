@@ -104,12 +104,14 @@ class _PlaylistPageState extends State<PlaylistPage> {
     _searchController = TextEditingController();
     _searchFocusNode = FocusNode();
     userCustomPlaylists.addListener(_onCustomPlaylistsChanged);
+    userPlaylistFolders.addListener(_onCustomPlaylistsChanged);
     _initializePlaylist();
   }
 
   @override
   void dispose() {
     userCustomPlaylists.removeListener(_onCustomPlaylistsChanged);
+    userPlaylistFolders.removeListener(_onCustomPlaylistsChanged);
     _searchController.dispose();
     _searchFocusNode.dispose();
     _searchQueryNotifier.dispose();
@@ -119,7 +121,7 @@ class _PlaylistPageState extends State<PlaylistPage> {
   void _onCustomPlaylistsChanged() {
     final resolvedId = _resolvedPlaylistId;
     if (resolvedId == null || !mounted) return;
-    for (final p in userCustomPlaylists.value) {
+    for (final p in storedCustomPlaylists) {
       if ((p['ytid'] ?? p['id'])?.toString() == resolvedId) {
         if (mounted) {
           setState(() {
@@ -350,14 +352,16 @@ class _PlaylistPageState extends State<PlaylistPage> {
                     .makePlaylistCollaborative(playlistId);
                 if (res.success && mounted) {
                   showToast(context, 'Playlist is now collaborative!');
-                  for (final p in userCustomPlaylists.value) {
+                  for (final p in storedCustomPlaylists) {
                     if ((p['ytid'] ?? p['id'])?.toString() == playlistId) {
                       setState(() {
                         _playlist = p;
                       });
                       if (mounted) {
                         showCollaborativePlaylistShareDialog(
-                            context, _playlist);
+                          context,
+                          _playlist,
+                        );
                       }
                       break;
                     }
@@ -388,10 +392,7 @@ class _PlaylistPageState extends State<PlaylistPage> {
                 showCollaborativePlaylistShareDialog(context, _playlist),
             borderRadius: BorderRadius.circular(16),
             child: Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 12,
-                vertical: 6,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
                 color: const Color(0xFF1DB954).withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(16),
@@ -534,72 +535,18 @@ class _PlaylistPageState extends State<PlaylistPage> {
           builder: (context) => EditPlaylistDialog(playlistData: _playlist),
         );
 
-        if (result != null) {
-          final resolvedPlaylistYtid =
-              _playlist['ytid']?.toString() ?? widget.playlistId;
-          if (resolvedPlaylistYtid == null ||
-              resolvedPlaylistYtid.isEmpty ||
-              resolvedPlaylistYtid == 'null') {
-            showToast(context, context.l10n!.error);
-            return;
-          }
-
-          final updatedPlaylist = {
-            ..._playlist,
-            ...result,
-            'ytid': resolvedPlaylistYtid,
-            'source': _playlist['source'] ?? result['source'],
-            'list': result['list'] ?? _playlist['list'],
-          };
-
-          // Search root list first, then inside folders.
-          final rootIndex = userCustomPlaylists.value.indexWhere(
-            (p) => p['ytid'] == resolvedPlaylistYtid,
-          );
-
-          if (rootIndex != -1) {
-            final updatedPlaylists = List<Map>.from(userCustomPlaylists.value);
-            updatedPlaylists[rootIndex] = updatedPlaylist;
-            userCustomPlaylists.value = updatedPlaylists;
-            unawaited(
-              addOrUpdateData<List>(
-                'user',
-                'customPlaylists',
-                userCustomPlaylists.value,
-              ),
-            );
-          } else {
-            // Playlist lives inside a folder - update it there.
-            final updatedFolders = List<Map>.from(userPlaylistFolders.value);
-            for (final folder in updatedFolders) {
-              final folderPlaylists = List<Map>.from(
-                folder['playlists'] as List? ?? [],
-              );
-              final fi = folderPlaylists.indexWhere(
-                (p) => p['ytid'] == resolvedPlaylistYtid,
-              );
-              if (fi != -1) {
-                folderPlaylists[fi] = updatedPlaylist;
-                folder['playlists'] = folderPlaylists;
-                break;
-              }
-            }
-            userPlaylistFolders.value = updatedFolders;
-            unawaited(
-              addOrUpdateData<List>(
-                'user',
-                'playlistFolders',
-                userPlaylistFolders.value,
-              ),
-            );
-          }
-
-          // Update offline playlist if it exists
-          unawaited(syncOfflinePlaylistMetadata(updatedPlaylist));
-
-          setState(() => _adoptPlaylist(updatedPlaylist));
-          showToast(context, context.l10n!.playlistUpdated);
+        if (result == null || !mounted) return;
+        final playlistId = _resolvedPlaylistId;
+        if (playlistId == null || playlistId.isEmpty || playlistId == 'null') {
+          showToast(context, context.l10n!.error);
+          return;
         }
+        final updated =
+            updateStoredCustomPlaylist(playlistId, result) ??
+            {..._playlist, ...result, 'ytid': playlistId};
+        unawaited(syncOfflinePlaylistMetadata(updated));
+        setState(() => _adoptPlaylist(updated));
+        showToast(context, context.l10n!.playlistUpdated);
       },
       tooltip: context.l10n!.editPlaylist,
     );

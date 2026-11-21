@@ -9,12 +9,16 @@ class ArtworkProvider {
   ArtworkProvider._();
 
   static final Map<String, ImageProvider> _cache = {};
+  static const _maxCachedProviders = 256;
 
   static ImageProvider get(String artwork) {
     if (artwork.isEmpty) throw ArgumentError('artwork must not be empty');
 
-    final cached = _cache[artwork];
-    if (cached != null) return cached;
+    final cached = _cache.remove(artwork);
+    if (cached != null) {
+      _cache[artwork] = cached;
+      return cached;
+    }
 
     late ImageProvider provider;
     try {
@@ -38,6 +42,7 @@ class ArtworkProvider {
       provider = const AssetImage('assets/placeholder.png');
     }
 
+    if (_cache.length >= _maxCachedProviders) _cache.remove(_cache.keys.first);
     _cache[artwork] = provider;
     return provider;
   }

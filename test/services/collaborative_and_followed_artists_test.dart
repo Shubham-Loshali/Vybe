@@ -1,13 +1,20 @@
 // ignore_for_file: depend_on_referenced_packages, avoid_print, cascade_invocations, prefer_const_constructors, prefer_const_declarations, deprecated_member_use
 
+import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
+import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
+import 'package:vybe/services/cloud_sync_service.dart';
 import 'package:vybe/services/collaborative_playlist_service.dart';
 import 'package:vybe/services/followed_artists_service.dart';
 import 'package:vybe/services/io_service.dart';
 import 'package:vybe/services/playlists_manager.dart';
+
+import '../support/test_account_user.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -134,6 +141,123 @@ void main() {
   });
 
   group('Collaborative Playlists Service Tests', () {
+    test('large uploads are resized proportionally for the shared document', () async {
+      const width = 640;
+      const height = 320;
+      final random = Random(7);
+      final pixels = Uint8List.fromList(
+        List<int>.generate(width * height * 4, (index) =>
+            index % 4 == 3 ? 255 : random.nextInt(256)),
+      );
+      final buffer = await ui.ImmutableBuffer.fromUint8List(pixels);
+      final descriptor = ui.ImageDescriptor.raw(
+        buffer,
+        width: width,
+        height: height,
+        pixelFormat: ui.PixelFormat.rgba8888,
+      );
+      final codec = await descriptor.instantiateCodec();
+      final image = (await codec.getNextFrame()).image;
+      addTearDown(() {
+        image.dispose();
+        codec.dispose();
+        descriptor.dispose();
+        buffer.dispose();
+      });
+      final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+      final uploaded = 'data:image/png;base64,${base64Encode(bytes!.buffer.asUint8List())}';
+      expect(uploaded.length, greaterThan(350000));
+      final shared = (await CollaborativePlaylistService.prepareSharedArtwork(uploaded))!;
+      expect(shared.length, lessThan(uploaded.length));
+      final sharedCodec = await ui.instantiateImageCodec(base64Decode(shared.split(',').last));
+      final sharedImage = (await sharedCodec.getNextFrame()).image;
+      addTearDown(() {
+        sharedImage.dispose();
+        sharedCodec.dispose();
+      });
+      expect((sharedImage.width, sharedImage.height), (320, 160));
+    });
+
+    test(
+      'owner replaces and clears the remote cover without changing songs',
+      () async {
+        final user = CloudSyncService.instance.currentUser;
+        final previous = user.value;
+        addTearDown(() => user.value = previous);
+        user.value = TestAccountUser(uid: 'test-owner');
+        final updates = <Map<String, dynamic>>[];
+        final service = CollaborativePlaylistService.withArtworkWriter((
+          code,
+          change,
+        ) async {
+          expect(code, 'ABC123');
+          updates.add(change);
+        });
+        final playlist = {'ownerUid': 'test-owner', 'collabId': 'ABC123'};
+        const url = 'https://example.com/shared-cover.jpg';
+        final changed = await service.updateOwnerArtwork(playlist, url);
+        final removed = await service.updateOwnerArtwork(playlist, null);
+        expect(changed, (image: url, error: null));
+        expect(removed, (image: null, error: null));
+        expect(updates, [
+          {'image': url},
+          {'image': null},
+        ]);
+        user.value = TestAccountUser(uid: 'another-user');
+        expect(
+          (await service.updateOwnerArtwork(playlist, url)).error,
+          isNotNull,
+        );
+        expect(updates, hasLength(2));
+      },
+    );
+
+    test(
+      'shared artwork snapshots replace and clear covers stored in folders',
+      () async {
+        final oldFolders = userPlaylistFolders.value;
+        addTearDown(() => userPlaylistFolders.value = oldFolders);
+        const id = 'customId-folder-cover';
+        final originalSongs = [
+          {'ytid': 'song-1'},
+          {'ytid': 'song-2'},
+        ];
+        userPlaylistFolders.value = [
+          {
+            'id': 'cover-folder',
+            'playlists': [
+              {'ytid': id, 'image': 'old', 'list': originalSongs},
+            ],
+          },
+        ];
+        expect(CollaborativePlaylistService.artworkChanges({}), isEmpty);
+        final update = updateStoredCustomPlaylist(
+          id,
+          CollaborativePlaylistService.artworkChanges({'image': 'new'}),
+        );
+        expect(update?['image'], 'new');
+        expect(update?['list'], originalSongs);
+        final cleared = updateStoredCustomPlaylist(
+          id,
+          CollaborativePlaylistService.artworkChanges({'image': null}),
+        );
+        expect(cleared?['image'], isNull);
+        expect(
+          storedCustomPlaylists.singleWhere((p) => p['ytid'] == id),
+          cleared,
+        );
+      },
+    );
+
+    test('a guest cannot replace a shared playlist owner’s artwork', () async {
+      final result = await CollaborativePlaylistService.instance
+          .updateOwnerArtwork({
+            'collabId': 'ABC123',
+            'ownerUid': 'an-owner',
+          }, 'https://example.com/cover.jpg');
+      expect(result.error, contains('playlist owner'));
+    });
+
     test('normaliseCode and inviteLink formatting', () {
       expect(CollaborativePlaylistService.normaliseCode('vybe://collab/abc123'), 'ABC123');
       expect(CollaborativePlaylistService.normaliseCode('ABC-123'), 'ABC123');

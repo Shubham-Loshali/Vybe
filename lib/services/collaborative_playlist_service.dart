@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math';
+import 'dart:ui' as ui;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
@@ -10,13 +12,28 @@ import 'package:vybe/services/playlists_manager.dart';
 import 'package:vybe/utilities/playlist_utils.dart';
 
 class CollaborativePlaylistService {
-  CollaborativePlaylistService._internal();
+  CollaborativePlaylistService._internal()
+    : _writeArtwork = _writeFirestoreArtwork;
+
+  @visibleForTesting
+  CollaborativePlaylistService.withArtworkWriter(this._writeArtwork);
+
+  final Future<void> Function(String code, Map<String, dynamic> change)
+  _writeArtwork;
   static final CollaborativePlaylistService instance =
       CollaborativePlaylistService._internal();
 
   static const String _collectionName = 'collaborativePlaylists';
   static const String _codeAlphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   static const int codeLength = 6;
+
+  static Future<void> _writeFirestoreArtwork(
+    String code,
+    Map<String, dynamic> change,
+  ) => FirebaseFirestore.instance
+      .collection(_collectionName)
+      .doc(code)
+      .update(change);
 
   final Map<String, StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>>
       _subscriptions = {};
@@ -30,6 +47,7 @@ class CollaborativePlaylistService {
 
     _syncAllActiveCollabPlaylists();
     userCustomPlaylists.addListener(_onLocalPlaylistsChanged);
+    userPlaylistFolders.addListener(_onLocalPlaylistsChanged);
   }
 
   void _onLocalPlaylistsChanged() {
@@ -38,7 +56,7 @@ class CollaborativePlaylistService {
 
   void _syncAllActiveCollabPlaylists() {
     final activeCollabCodes = <String>{};
-    for (final p in userCustomPlaylists.value) {
+    for (final p in storedCustomPlaylists) {
       if (p['isCollaborative'] == true) {
         final code = (p['collabId'] ?? p['inviteCode'])?.toString();
         if (code != null && code.isNotEmpty) {
@@ -91,7 +109,87 @@ class CollaborativePlaylistService {
   }
 
   /// Creates a shareable deep link from a code.
-  static String inviteLink(String code) => 'vybe://collab/${normaliseCode(code)}';
+  static String inviteLink(String code) =>
+      'vybe://collab/${normaliseCode(code)}';
+
+  /// Keeps large uploads within the shared document's artwork budget.
+  static Future<String?> prepareSharedArtwork(String? image) async {
+    if (image == null ||
+        !image.startsWith('data:image/') ||
+        image.length <= 350000) {
+      return image;
+    }
+    final bytes = base64Decode(image.substring(image.indexOf(',') + 1));
+    final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
+    try {
+      final descriptor = await ui.ImageDescriptor.encoded(buffer);
+      try {
+        final scale = min(1, 320 / max(descriptor.width, descriptor.height));
+        final codec = await descriptor.instantiateCodec(
+          targetWidth: max(1, (descriptor.width * scale).round()),
+          targetHeight: max(1, (descriptor.height * scale).round()),
+        );
+        try {
+          final frame = await codec.getNextFrame();
+          try {
+            final png = await frame.image.toByteData(
+              format: ui.ImageByteFormat.png,
+            );
+            if (png == null)
+              throw StateError('Could not encode playlist artwork');
+            return 'data:image/png;base64,${base64Encode(png.buffer.asUint8List(png.offsetInBytes, png.lengthInBytes))}';
+          } finally {
+            frame.image.dispose();
+          }
+        } finally {
+          codec.dispose();
+        }
+      } finally {
+        descriptor.dispose();
+      }
+    } finally {
+      buffer.dispose();
+    }
+  }
+
+  Future<({String? image, String? error})> updateOwnerArtwork(
+    Map playlist,
+    String? image,
+  ) async {
+    final uid = CloudSyncService.instance.currentUser.value?.uid;
+    if (uid == null || uid != playlist['ownerUid']) {
+      return (
+        image: null,
+        error: 'Sign in as the playlist owner to change its shared artwork.',
+      );
+    }
+    final code = (playlist['collabId'] ?? playlist['inviteCode'])?.toString();
+    if (code == null || code.isEmpty) {
+      return (image: null, error: 'This playlist has no shared invite code.');
+    }
+    try {
+      final sharedImage = await prepareSharedArtwork(image);
+      await _writeArtwork(code, {
+        'image': sharedImage,
+      }).timeout(const Duration(seconds: 10));
+      return (image: sharedImage, error: null);
+    } catch (error, stackTrace) {
+      logger.log(
+        'Could not update collaborative playlist artwork',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      return (
+        image: null,
+        error: 'Could not save the shared artwork. Try again.',
+      );
+    }
+  }
+
+  /// Old snapshots may omit the field. An explicit null removes a custom cover.
+  static Map<String, dynamic> artworkChanges(Map<String, dynamic> snapshot) => {
+    if (snapshot.containsKey('image')) 'image': snapshot['image']?.toString(),
+  };
 
   /// Creates a new collaborative playlist.
   Future<({bool success, String message, String? playlistId, String? inviteCode})>
@@ -137,6 +235,7 @@ class CollaborativePlaylistService {
 
     // Push to Firestore in background without blocking dialog
     try {
+      final sharedImage = await prepareSharedArtwork(image);
       unawaited(
         FirebaseFirestore.instance
             .collection(_collectionName)
@@ -146,7 +245,7 @@ class CollaborativePlaylistService {
               'title': cleanTitle,
               'ownerUid': uid,
               'ownerName': userName,
-              'image': image,
+              'image': sharedImage,
               'createdAt': FieldValue.serverTimestamp(),
               'updatedAt': FieldValue.serverTimestamp(),
               'collaborators': [collaboratorEntry],
@@ -179,15 +278,15 @@ class CollaborativePlaylistService {
 
   /// Upgrades an existing custom playlist to be collaborative.
   Future<({bool success, String message, String? inviteCode})>
-      makePlaylistCollaborative(String playlistId) async {
-    final index = userCustomPlaylists.value.indexWhere(
-      (p) => (p['ytid'] ?? p['id'])?.toString() == playlistId,
-    );
-    if (index == -1) {
+  makePlaylistCollaborative(String playlistId) async {
+    final stored = storedCustomPlaylists
+        .where((p) => (p['ytid'] ?? p['id'])?.toString() == playlistId)
+        .firstOrNull;
+    if (stored == null) {
       return (success: false, message: 'Playlist not found', inviteCode: null);
     }
 
-    final existing = Map<String, dynamic>.from(userCustomPlaylists.value[index]);
+    final existing = Map<String, dynamic>.from(stored);
     if (existing['isCollaborative'] == true && existing['inviteCode'] != null) {
       return (
         success: true,
@@ -229,28 +328,33 @@ class CollaborativePlaylistService {
     existing['list'] = stampedSongs;
     existing['updatedAt'] = now;
 
-    final updatedList = List<Map>.from(userCustomPlaylists.value);
-    updatedList[index] = existing;
-    userCustomPlaylists.value = updatedList;
-    await _persistLocalPlaylists();
+    updateStoredCustomPlaylist(playlistId, existing);
 
     try {
-      final docRef = FirebaseFirestore.instance.collection(_collectionName).doc(inviteCode);
-      await docRef.set({
-        'id': inviteCode,
-        'title': existing['title'] ?? 'Collaborative Playlist',
-        'ownerUid': uid,
-        'ownerName': userName,
-        'image': existing['image'],
-        'createdAt': FieldValue.serverTimestamp(),
-        'updatedAt': FieldValue.serverTimestamp(),
-        'collaborators': [collaboratorEntry],
-        'songs': stampedSongs,
-      }).timeout(const Duration(seconds: 10));
+      final docRef = FirebaseFirestore.instance
+          .collection(_collectionName)
+          .doc(inviteCode);
+      await docRef
+          .set({
+            'id': inviteCode,
+            'title': existing['title'] ?? 'Collaborative Playlist',
+            'ownerUid': uid,
+            'ownerName': userName,
+            'image': await prepareSharedArtwork(existing['image']?.toString()),
+            'createdAt': FieldValue.serverTimestamp(),
+            'updatedAt': FieldValue.serverTimestamp(),
+            'collaborators': [collaboratorEntry],
+            'songs': stampedSongs,
+          })
+          .timeout(const Duration(seconds: 10));
 
       _listenToCollabPlaylist(inviteCode);
     } catch (e, stackTrace) {
-      logger.log('Firestore make collaborative error', error: e, stackTrace: stackTrace);
+      logger.log(
+        'Firestore make collaborative error',
+        error: e,
+        stackTrace: stackTrace,
+      );
     }
 
     return (
@@ -273,11 +377,9 @@ class CollaborativePlaylistService {
     }
 
     // Check if user is already a member locally
-    final existingLocalIndex = userCustomPlaylists.value.indexWhere(
-      (p) => (p['collabId'] ?? p['inviteCode'])?.toString() == code,
-    );
-    if (existingLocalIndex != -1) {
-      final local = Map<String, dynamic>.from(userCustomPlaylists.value[existingLocalIndex]);
+    final existing = _storedCollaborativePlaylist(code);
+    if (existing != null) {
+      final local = Map<String, dynamic>.from(existing);
       _listenToCollabPlaylist(code);
       return (
         success: true,
@@ -304,9 +406,9 @@ class CollaborativePlaylistService {
       final now = DateTime.now().millisecondsSinceEpoch;
 
       final collaborators = List<Map<String, dynamic>>.from(
-        (data['collaborators'] as List? ?? [])
-            .whereType<Map>()
-            .map(Map<String, dynamic>.from),
+        (data['collaborators'] as List? ?? []).whereType<Map>().map(
+          Map<String, dynamic>.from,
+        ),
       );
 
       // Add user to collaborators if not already present
@@ -343,7 +445,7 @@ class CollaborativePlaylistService {
         'isCollaborative': true,
         'ownerUid': data['ownerUid']?.toString() ?? '',
         'ownerName': data['ownerName']?.toString() ?? 'Owner',
-        'image': data['image']?.toString(),
+        ...artworkChanges(data),
         'list': songs,
         'collaborators': collaborators,
         'createdAt': (data['createdAt'] is Timestamp)
@@ -363,12 +465,69 @@ class CollaborativePlaylistService {
         playlist: playlistMap,
       );
     } catch (e, stackTrace) {
-      logger.log('joinCollaborativePlaylist error', error: e, stackTrace: stackTrace);
+      logger.log(
+        'joinCollaborativePlaylist error',
+        error: e,
+        stackTrace: stackTrace,
+      );
       return (
         success: false,
         message: 'Could not connect to collaborative server. Check connection.',
         playlist: null,
       );
+    }
+  }
+
+  Map? _storedCollaborativePlaylist(String codeOrId) {
+    final code = normaliseCode(codeOrId);
+    return storedCustomPlaylists
+        .where(
+          (p) =>
+              p['isCollaborative'] == true &&
+              ((p['collabId'] ?? p['inviteCode'])?.toString() == code ||
+                  (p['ytid'] ?? p['id'])?.toString() == codeOrId),
+        )
+        .firstOrNull;
+  }
+
+  Map<String, dynamic> _attributeSong(
+    Map song,
+    String uid,
+    String name,
+    int now,
+  ) => {
+    ...Map<String, dynamic>.from(song),
+    'addedByUid': uid,
+    'addedByName': name,
+    'addedAt': now,
+  };
+
+  /// Publishes songs that the library has already added to its local copy.
+  Future<void> syncAddedSongs(String code, Iterable<Map> songs) async {
+    final uid = _currentUid();
+    final name = _displayName();
+    final now = DateTime.now().millisecondsSinceEpoch;
+    await _writeAddedSongs(
+      code,
+      songs.map((song) => _attributeSong(song, uid, name, now)).toList(),
+    );
+  }
+
+  Future<void> _writeAddedSongs(
+    String code,
+    List<Map<String, dynamic>> songs,
+  ) async {
+    try {
+      await FirebaseFirestore.instance
+          .collection(_collectionName)
+          .doc(code)
+          .update({
+            'songs': FieldValue.arrayUnion(songs),
+            'updatedAt': FieldValue.serverTimestamp(),
+          })
+          .timeout(const Duration(seconds: 8));
+    } catch (error) {
+      logger.log('Collaborative addSong remote sync failed', error: error);
     }
   }
 
@@ -378,71 +537,50 @@ class CollaborativePlaylistService {
     final userName = _displayName();
     final now = DateTime.now().millisecondsSinceEpoch;
 
-    final stampedSong = Map<String, dynamic>.from(song);
-    stampedSong['addedByUid'] = uid;
-    stampedSong['addedByName'] = userName;
-    stampedSong['addedAt'] = now;
+    final stampedSong = _attributeSong(song, uid, userName, now);
 
     // 1. Immediately update local state
-    final index = userCustomPlaylists.value.indexWhere(
-      (p) =>
-          (p['collabId'] ?? p['inviteCode'])?.toString() ==
-              normaliseCode(collabCodeOrId) ||
-          (p['ytid'] ?? p['id'])?.toString() == collabCodeOrId,
-    );
+    final playlist = _storedCollaborativePlaylist(collabCodeOrId);
     String? code;
-    if (index != -1) {
-      final playlist = Map<String, dynamic>.from(userCustomPlaylists.value[index]);
+    if (playlist != null) {
       code = (playlist['collabId'] ?? playlist['inviteCode'])?.toString();
       final list = List<dynamic>.from(playlist['list'] as List? ?? []);
 
       final targetYtid = (song['ytid'] ?? song['id'])?.toString();
-      if (list.any((s) =>
-          s is Map &&
-          targetYtid != null &&
-          (s['ytid'] ?? s['id'])?.toString() == targetYtid)) {
+      if (list.any(
+        (s) =>
+            s is Map &&
+            targetYtid != null &&
+            (s['ytid'] ?? s['id'])?.toString() == targetYtid,
+      )) {
         return false; // Already present
       }
 
       list.add(stampedSong);
-      playlist['list'] = list;
-      playlist['updatedAt'] = now;
-
-      final updated = List<Map>.from(userCustomPlaylists.value);
-      updated[index] = playlist;
-      userCustomPlaylists.value = updated;
-      unawaited(_persistLocalPlaylists());
+      updateStoredCustomPlaylist(
+        (playlist['ytid'] ?? playlist['id']).toString(),
+        {'list': list, 'updatedAt': now},
+      );
     }
 
     code ??= normaliseCode(collabCodeOrId);
 
     // 2. Sync to Firestore in real time
-    try {
-      final docRef = FirebaseFirestore.instance.collection(_collectionName).doc(code);
-      await docRef.update({
-        'songs': FieldValue.arrayUnion([stampedSong]),
-        'updatedAt': FieldValue.serverTimestamp(),
-      }).timeout(const Duration(seconds: 8));
-      return true;
-    } catch (e) {
-      logger.log('Collaborative addSong remote sync failed', error: e);
-      return true; // Still preserved locally
-    }
+    await _writeAddedSongs(code, [stampedSong]);
+    return true;
   }
 
   /// Removes a song from a collaborative playlist.
-  Future<bool> removeSong(String collabCodeOrId, String songYtid) async {
-    final index = userCustomPlaylists.value.indexWhere(
-      (p) =>
-          (p['collabId'] ?? p['inviteCode'])?.toString() ==
-              normaliseCode(collabCodeOrId) ||
-          (p['ytid'] ?? p['id'])?.toString() == collabCodeOrId,
-    );
+  Future<bool> removeSong(
+    String collabCodeOrId,
+    String songYtid, {
+    Map? removedLocally,
+  }) async {
+    final playlist = _storedCollaborativePlaylist(collabCodeOrId);
     String? code;
-    Map<dynamic, dynamic>? songToRemove;
+    var songToRemove = removedLocally;
 
-    if (index != -1) {
-      final playlist = Map<String, dynamic>.from(userCustomPlaylists.value[index]);
+    if (playlist != null) {
       code = (playlist['collabId'] ?? playlist['inviteCode'])?.toString();
       final list = List<dynamic>.from(playlist['list'] as List? ?? []);
 
@@ -454,13 +592,10 @@ class CollaborativePlaylistService {
       if (songIndex != -1) {
         songToRemove = list[songIndex] as Map;
         list.removeAt(songIndex);
-        playlist['list'] = list;
-        playlist['updatedAt'] = DateTime.now().millisecondsSinceEpoch;
-
-        final updated = List<Map>.from(userCustomPlaylists.value);
-        updated[index] = playlist;
-        userCustomPlaylists.value = updated;
-        unawaited(_persistLocalPlaylists());
+        updateStoredCustomPlaylist(
+          (playlist['ytid'] ?? playlist['id']).toString(),
+          {'list': list, 'updatedAt': DateTime.now().millisecondsSinceEpoch},
+        );
       }
     }
 
@@ -495,44 +630,56 @@ class CollaborativePlaylistService {
     try {
       final docRef = FirebaseFirestore.instance.collection(_collectionName).doc(code);
       // ignore: cancel_subscriptions
-      final sub = docRef.snapshots().listen(
-        (snapshot) {
-          if (!snapshot.exists || snapshot.data() == null) return;
-          final data = snapshot.data()!;
+      final sub = docRef
+          .snapshots(includeMetadataChanges: true)
+          .listen(
+            (snapshot) {
+              if (!snapshot.exists || snapshot.data() == null) return;
+              final data = snapshot.data()!;
 
-          final index = userCustomPlaylists.value.indexWhere(
-            (p) => (p['collabId'] ?? p['inviteCode'])?.toString() == code,
+              final current = storedCustomPlaylists
+                  .where(
+                    (p) =>
+                        (p['collabId'] ?? p['inviteCode'])?.toString() == code,
+                  )
+                  .firstOrNull;
+              final id = (current?['ytid'] ?? current?['id'])?.toString();
+              if (current == null || id == null) return;
+              final rawSongs = data['songs'] as List? ?? [];
+              final songs = List<Map<String, dynamic>>.from(
+                rawSongs.whereType<Map>().map((s) {
+                  final m = Map<String, dynamic>.from(s);
+                  m['ytid'] ??= m['id'];
+                  return m;
+                }),
+              );
+              final rawCollaborators = data['collaborators'] as List? ?? [];
+              final collaborators = List<Map<String, dynamic>>.from(
+                rawCollaborators.whereType<Map>().map(
+                  Map<String, dynamic>.from,
+                ),
+              );
+
+              final artwork = snapshot.metadata.hasPendingWrites
+                  ? <String, dynamic>{}
+                  : artworkChanges(data);
+              final artworkChanged =
+                  artwork.containsKey('image') &&
+                  artwork['image'] != current['image'];
+              final updated = updateStoredCustomPlaylist(id, {
+                'title': data['title']?.toString() ?? current['title'],
+                'list': songs,
+                'collaborators': collaborators,
+                ...artwork,
+              });
+              if (updated != null && artworkChanged) {
+                unawaited(syncOfflinePlaylistMetadata(updated));
+              }
+            },
+            onError: (Object e) {
+              logger.log('Collaborative listener error on $code', error: e);
+            },
           );
-          if (index == -1) return;
-
-          final current = Map<String, dynamic>.from(userCustomPlaylists.value[index]);
-          final rawSongs = data['songs'] as List? ?? [];
-          final songs = List<Map<String, dynamic>>.from(
-            rawSongs.whereType<Map>().map((s) {
-              final m = Map<String, dynamic>.from(s);
-              m['ytid'] ??= m['id'];
-              return m;
-            }),
-          );
-          final rawCollaborators = data['collaborators'] as List? ?? [];
-          final collaborators = List<Map<String, dynamic>>.from(
-            rawCollaborators.whereType<Map>().map(Map<String, dynamic>.from),
-          );
-
-          current['title'] = data['title']?.toString() ?? current['title'];
-          current['list'] = songs;
-          current['collaborators'] = collaborators;
-          current['image'] = data['image']?.toString() ?? current['image'];
-
-          final updated = List<Map>.from(userCustomPlaylists.value);
-          updated[index] = current;
-          userCustomPlaylists.value = updated;
-          unawaited(_persistLocalPlaylists());
-        },
-        onError: (Object e) {
-          logger.log('Collaborative listener error on $code', error: e);
-        },
-      );
 
       _subscriptions[code] = sub;
     } catch (e) {
@@ -559,8 +706,11 @@ class CollaborativePlaylistService {
       final userBox = Hive.box('user');
       await userBox.put('customPlaylists', userCustomPlaylists.value);
     } catch (e, stackTrace) {
-      logger.log('Failed to persist collaborative playlist to user box',
-          error: e, stackTrace: stackTrace);
+      logger.log(
+        'Failed to persist collaborative playlist to user box',
+        error: e,
+        stackTrace: stackTrace,
+      );
     }
   }
 
@@ -570,5 +720,6 @@ class CollaborativePlaylistService {
     }
     _subscriptions.clear();
     userCustomPlaylists.removeListener(_onLocalPlaylistsChanged);
+    userPlaylistFolders.removeListener(_onLocalPlaylistsChanged);
   }
 }

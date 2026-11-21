@@ -252,13 +252,11 @@ String addSongInCustomPlaylist(
       song['ytid'] = songYtid;
     }
 
-    if (playlistSongs.any(
-      (playlistElement) {
-        final elemYtid =
-            (playlistElement['ytid'] ?? playlistElement['id'])?.toString();
-        return elemYtid != null && elemYtid == songYtid;
-      },
-    )) {
+    if (playlistSongs.any((playlistElement) {
+      final elemYtid = (playlistElement['ytid'] ?? playlistElement['id'])
+          ?.toString();
+      return elemYtid != null && elemYtid == songYtid;
+    })) {
       return context.l10n!.songAlreadyInPlaylist;
     }
     if (indexToInsert != null) {
@@ -293,7 +291,10 @@ String addSongInCustomPlaylist(
       final code = customPlaylist['collabId'] ?? customPlaylist['inviteCode'];
       if (code != null) {
         unawaited(
-          CollaborativePlaylistService.instance.addSong(code.toString(), song),
+          CollaborativePlaylistService.instance.syncAddedSongs(
+            code.toString(),
+            [song],
+          ),
         );
       }
     }
@@ -337,13 +338,11 @@ String addSongsInCustomPlaylist(
       if (song['ytid'] == null) {
         song['ytid'] = songYtid;
       }
-      final alreadyExists = playlistSongs.any(
-        (playlistElement) {
-          final elemYtid =
-              (playlistElement['ytid'] ?? playlistElement['id'])?.toString();
-          return elemYtid != null && elemYtid == songYtid;
-        },
-      );
+      final alreadyExists = playlistSongs.any((playlistElement) {
+        final elemYtid = (playlistElement['ytid'] ?? playlistElement['id'])
+            ?.toString();
+        return elemYtid != null && elemYtid == songYtid;
+      });
       if (!alreadyExists) {
         playlistSongs.add(song);
         newSongs.add(song);
@@ -351,6 +350,15 @@ String addSongsInCustomPlaylist(
     }
 
     if (newSongs.isNotEmpty) {
+      final code = customPlaylist['collabId'] ?? customPlaylist['inviteCode'];
+      if (customPlaylist['isCollaborative'] == true && code != null) {
+        unawaited(
+          CollaborativePlaylistService.instance.syncAddedSongs(
+            code.toString(),
+            newSongs.whereType<Map>(),
+          ),
+        );
+      }
       if (isFromFolder) {
         userPlaylistFolders.value = [...userPlaylistFolders.value];
         unawaited(
@@ -414,6 +422,7 @@ bool removeSongFromPlaylist(
           CollaborativePlaylistService.instance.removeSong(
             code.toString(),
             songYtid,
+            removedLocally: songToRemove,
           ),
         );
       }
@@ -572,9 +581,7 @@ void removeUserCustomPlaylist(dynamic playlist) {
     if (playlistId == null || playlistId.isEmpty) return;
 
     final updatedPlaylists = List<Map>.from(userCustomPlaylists.value)
-      ..removeWhere(
-        (p) => (p['ytid'] ?? p['id'])?.toString() == playlistId,
-      );
+      ..removeWhere((p) => (p['ytid'] ?? p['id'])?.toString() == playlistId);
     userCustomPlaylists.value = updatedPlaylists;
 
     final foldersChanged = _removePlaylistFromFolders(playlistId);
@@ -641,12 +648,11 @@ bool _removePlaylistFromFolders(String playlistId) {
 }
 
 bool _removePlaylistFromLikedPlaylists(String playlistId) {
-  final updatedLikedPlaylists = _deduplicateLikedPlaylists(
-    userLikedPlaylists.value,
-  )..removeWhere(
-      (playlist) =>
-          (playlist['ytid'] ?? playlist['id'])?.toString() == playlistId,
-    );
+  final updatedLikedPlaylists =
+      _deduplicateLikedPlaylists(userLikedPlaylists.value)..removeWhere(
+        (playlist) =>
+            (playlist['ytid'] ?? playlist['id'])?.toString() == playlistId,
+      );
 
   if (_likedPlaylistIdsAreEqual(
     userLikedPlaylists.value,
@@ -1153,6 +1159,46 @@ Future<Map?> getPlaylistInfoForWidget(
   }
 
   return _fetchYouTubePlaylist(normalizedId);
+}
+
+Iterable<Map> get storedCustomPlaylists sync* {
+  yield* userCustomPlaylists.value;
+  for (final folder in userPlaylistFolders.value) {
+    yield* (folder['playlists'] as List? ?? const []).whereType<Map>();
+  }
+}
+
+/// Applies changed fields to the current copy, including playlists in folders.
+Map? updateStoredCustomPlaylist(String playlistId, Map changes) {
+  bool matches(Map playlist) =>
+      (playlist['ytid'] ?? playlist['id'])?.toString() == playlistId;
+
+  final root = [...userCustomPlaylists.value];
+  final rootIndex = root.indexWhere(matches);
+  if (rootIndex != -1) {
+    final updated = {...root[rootIndex], ...changes};
+    root[rootIndex] = updated;
+    userCustomPlaylists.value = root;
+    unawaited(addOrUpdateData('user', 'customPlaylists', root));
+    return updated;
+  }
+
+  final folders = [...userPlaylistFolders.value];
+  for (var index = 0; index < folders.length; index++) {
+    final folder = folders[index];
+    final playlists = List<dynamic>.of(folder['playlists'] as List? ?? const []);
+    final playlistIndex = playlists.indexWhere(
+      (playlist) => playlist is Map && matches(playlist),
+    );
+    if (playlistIndex == -1) continue;
+    final updated = {...playlists[playlistIndex] as Map, ...changes};
+    playlists[playlistIndex] = updated;
+    folders[index] = {...folder, 'playlists': playlists};
+    userPlaylistFolders.value = folders;
+    unawaited(addOrUpdateData('user', 'playlistFolders', folders));
+    return updated;
+  }
+  return null;
 }
 
 ({Map playlist, bool isFromFolder})? _findCustomPlaylist(String playlistId) {

@@ -440,6 +440,7 @@ class _LibraryPageState extends State<LibraryPage> {
             playlist['title'],
             playlistId: playlist['ytid'],
             playlistArtwork: playlist['image'],
+            coverPlaylist: isArtist ? null : playlist,
             cubeIcon: isArtist
                 ? FluentIcons.person_24_filled
                 : FluentIcons.text_bullet_list_24_filled,
@@ -511,6 +512,7 @@ class _LibraryPageState extends State<LibraryPage> {
           playlist['title'],
           playlistId: playlist['ytid'],
           playlistArtwork: playlist['image'],
+          coverPlaylist: playlist,
           isAlbum: playlist['isAlbum'],
           playlistData:
               playlist['source'] == 'user-created' ||
@@ -703,7 +705,9 @@ class _LibraryPageState extends State<LibraryPage> {
               ListTile(
                 leading: const Icon(FluentIcons.music_note_2_24_regular),
                 title: Text(this.context.l10n!.addPlaylist),
-                subtitle: const Text('Create a new playlist or import from YouTube'),
+                subtitle: const Text(
+                  'Create a new playlist or import from YouTube',
+                ),
                 onTap: () => Navigator.of(sheetContext).pop('add_playlist'),
               ),
               ListTile(

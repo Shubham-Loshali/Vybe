@@ -1,5 +1,6 @@
 import 'package:fluentui_system_icons/fluentui_system_icons.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:vybe/widgets/no_artwork_cube.dart';
 import 'package:vybe/widgets/playlist_artwork.dart';
 
 /// The same cover on Home, in the library, and on the playlist itself.
@@ -9,15 +10,19 @@ class PlaylistCover extends StatelessWidget {
     required this.playlist,
     this.size = 220,
     this.fallbackIcon = FluentIcons.text_bullet_list_24_filled,
+    this.fallback,
   });
 
   final Map playlist;
   final double size;
   final IconData fallbackIcon;
+  final Widget? fallback;
 
   static List<List<String>> songArtwork(Map playlist) {
     final result = <List<String>>[];
     final seen = <String>{};
+    final shared = playlist['isCollaborative'] == true;
+    var hasMissingArtwork = false;
     final songs = playlist['list'];
     if (songs is! List) return result;
     for (final song in songs.whereType<Map>()) {
@@ -32,11 +37,26 @@ class PlaylistCover extends StatelessWidget {
               .whereType<String>()
               .map((s) => s.trim())
               .where((s) => s.isNotEmpty && s != 'null')
+              // Shared covers cannot depend on files available on one phone.
+              .where(
+                (s) =>
+                    !shared ||
+                    s.startsWith('https://') ||
+                    s.startsWith('http://') ||
+                    s.startsWith('data:image/'),
+              )
               .toSet()
               .toList();
-      if (candidates.isEmpty || !seen.add(candidates.first)) continue;
+      if (candidates.isEmpty) {
+        hasMissingArtwork = true;
+        continue;
+      }
+      if (!seen.add(candidates.first)) continue;
       result.add(candidates);
       if (result.length == 4) break;
+    }
+    if (hasMissingArtwork && result.isNotEmpty && result.length < 4) {
+      result.add(const []);
     }
     return result;
   }
@@ -48,12 +68,15 @@ class PlaylistCover extends StatelessWidget {
     final isArtist =
         playlist['isArtist'] == true || playlist['source'] == 'youtube-artist';
     final songs = songArtwork(playlist);
-    final fallback = songs.isEmpty || isArtist
-        ? PlaylistArtwork(
-            playlistArtwork: null,
-            size: size,
-            cubeIcon: isArtist ? FluentIcons.person_24_filled : fallbackIcon,
-          )
+    final defaultCover = songs.isEmpty || isArtist
+        ? fallback ??
+              PlaylistArtwork(
+                playlistArtwork: null,
+                size: size,
+                cubeIcon: isArtist
+                    ? FluentIcons.person_24_filled
+                    : fallbackIcon,
+              )
         : songs.length == 1
         ? _SongCover(candidates: songs.first, size: size)
         : SizedBox(
@@ -67,7 +90,10 @@ class PlaylistCover extends StatelessWidget {
                     children: [
                       for (var column = 0; column < 2; column++)
                         _SongCover(
-                          candidates: songs[(row * 2 + column) % songs.length],
+                          candidates:
+                              songs[songs.length == 2
+                                  ? (row + column) % 2
+                                  : (row * 2 + column) % songs.length],
                           size: size / 2,
                         ),
                     ],
@@ -76,11 +102,11 @@ class PlaylistCover extends StatelessWidget {
             ),
           );
     final cover = image == null || image.isEmpty || image == 'null'
-        ? fallback
+        ? defaultCover
         : PlaylistArtwork(
             playlistArtwork: image,
             size: size,
-            fallback: fallback,
+            fallback: defaultCover,
           );
     return isArtist ? ClipOval(child: cover) : cover;
   }
@@ -120,10 +146,10 @@ class _SongCover extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => PlaylistArtwork(
-    playlistArtwork: candidates.first,
+    playlistArtwork: candidates.isEmpty ? null : candidates.first,
     size: size,
     fallback: candidates.length > 1
         ? _SongCover(candidates: candidates.sublist(1), size: size)
-        : null,
+        : NullArtworkWidget(size: size, borderRadius: 0),
   );
 }

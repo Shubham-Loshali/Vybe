@@ -46,6 +46,7 @@ class PlaylistArtwork extends StatelessWidget {
           height: size,
           width: size,
           fit: BoxFit.cover,
+          gaplessPlayback: true,
           errorBuilder: (_, __, ___) => _nullArtwork(),
         ),
       );

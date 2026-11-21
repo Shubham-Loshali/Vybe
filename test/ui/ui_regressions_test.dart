@@ -20,6 +20,7 @@ import 'package:vybe/widgets/artist_follow_button.dart';
 import 'package:vybe/widgets/marquee.dart';
 import 'package:vybe/widgets/mini_player.dart';
 import 'package:vybe/widgets/now_playing/spotify_like_button.dart';
+import 'package:vybe/widgets/playlist_bar.dart';
 import 'package:vybe/widgets/playlist_cover.dart';
 import 'package:vybe/widgets/playlist_cube.dart';
 import 'package:vybe/widgets/playlist_page/playlist_header.dart';
@@ -220,7 +221,7 @@ void main() {
   });
 
   test(
-    'collage sources include offline paths, ignore blanks, and deduplicate',
+    'collage sources deduplicate covers and leave a tile for missing artwork',
     () {
       final sources = PlaylistCover.songArtwork({
         'list': [
@@ -233,11 +234,93 @@ void main() {
           {'artWorkPath': 'file:///local/second.jpg'},
         ],
       });
-      expect(sources.length, 2);
+      expect(sources.length, 3);
       expect(sources.first, ['/local/cover.jpg', 'https://example.com/a.jpg']);
-      expect(sources.last.single, 'file:///local/second.jpg');
+      expect(sources[1].single, 'file:///local/second.jpg');
+      expect(sources.last, isEmpty);
     },
   );
+
+  testWidgets(
+    'Library rows and detail covers update together after song edits',
+    (tester) async {
+      await tester.runAsync(() => warmArtwork(covers));
+      final playlist = ValueNotifier<Map>({'title': 'Mix', 'list': []});
+      addTearDown(playlist.dispose);
+      await tester.pumpWidget(
+        uiApp(
+          ValueListenableBuilder<Map>(
+            valueListenable: playlist,
+            builder: (_, data, _) => Column(
+              children: [
+                PlaylistBar(
+                  'Mix',
+                  coverPlaylist: data,
+                  showBuildActions: false,
+                ),
+                PlaylistCube(data, showTypeLabel: false),
+              ],
+            ),
+          ),
+        ),
+      );
+      Finder imagesIn(Type type) =>
+          find.descendant(of: find.byType(type), matching: find.byType(Image));
+      expect(imagesIn(PlaylistBar), findsNothing);
+      playlist.value = {
+        'title': 'Mix',
+        'list': [
+          for (final cover in covers) {'highResImage': cover},
+        ],
+      };
+      await tester.pumpAndSettle();
+      expect(imagesIn(PlaylistBar), findsNWidgets(4));
+      expect(imagesIn(PlaylistCube), findsNWidgets(4));
+      for (final count in [2, 3]) {
+        playlist.value = {
+          'title': 'Mix',
+          'list': [
+            for (final cover in covers.take(count)) {'highResImage': cover},
+          ],
+        };
+        await tester.pumpAndSettle();
+        expect(imagesIn(PlaylistBar), findsNWidgets(4));
+        expect(imagesIn(PlaylistCube), findsNWidgets(4));
+      }
+      playlist.value = {
+        ...playlist.value,
+        'list': [
+          {'highResImage': covers.last},
+        ],
+      };
+      await tester.pumpAndSettle();
+      expect(imagesIn(PlaylistBar), findsOneWidget);
+      expect(imagesIn(PlaylistCube), findsOneWidget);
+      playlist.value = {...playlist.value, 'image': covers.first};
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<Image>(imagesIn(PlaylistBar)).image,
+        tester.widget<Image>(imagesIn(PlaylistCube)).image,
+      );
+    },
+  );
+
+  test('collaborative cover ignores artwork paths unique to each member', () {
+    List<List<String>> artworkFor(String file) => PlaylistCover.songArtwork({
+      'isCollaborative': true,
+      'list': [
+        {'artworkPath': file, 'highResImage': 'https://example.com/shared.jpg'},
+        {'artworkPath': file},
+      ],
+    });
+    final owner = artworkFor('/owner/cover.jpg');
+    final member = artworkFor('/member/cover.jpg');
+    expect(owner, member);
+    expect(owner, [
+      ['https://example.com/shared.jpg'],
+      <String>[],
+    ]);
+  });
 
   testWidgets(
     'marquee resets to the first word when a long title becomes short',

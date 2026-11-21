@@ -18,6 +18,12 @@ service cloud.firestore {
                         .hasOnly(['songs', 'collaborators', 'updatedAt'])
                     && request.resource.data.songs is list
                     && request.resource.data.collaborators is list;
+      allow update: if request.auth != null
+                    && request.auth.uid == resource.data.ownerUid
+                    && request.resource.data.diff(resource.data).affectedKeys()
+                        .hasOnly(['image'])
+                    && (request.resource.data.image == null ||
+                        request.resource.data.image is string);
     }
 
     // 3. Listen Together (Real-time synchronized listening rooms)

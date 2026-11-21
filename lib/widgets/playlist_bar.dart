@@ -7,7 +7,6 @@ import 'package:vybe/extensions/l10n.dart';
 import 'package:vybe/services/artist_service.dart';
 import 'package:vybe/services/collaborative_playlist_service.dart';
 import 'package:vybe/services/common_services.dart';
-import 'package:vybe/services/data_manager.dart';
 import 'package:vybe/services/playlists_manager.dart';
 import 'package:vybe/services/router_service.dart';
 import 'package:vybe/utilities/artwork_provider.dart';
@@ -19,6 +18,7 @@ import 'package:vybe/utilities/playlist_utils.dart';
 import 'package:vybe/widgets/dialog_item.dart';
 import 'package:vybe/widgets/edit_playlist_dialog.dart';
 import 'package:vybe/widgets/overflow_menu_button.dart';
+import 'package:vybe/widgets/playlist_cover.dart';
 import 'package:vybe/widgets/popup_menu_item.dart';
 import 'package:vybe/widgets/spinner.dart';
 
@@ -28,6 +28,7 @@ class PlaylistBar extends StatelessWidget {
     super.key,
     this.playlistId,
     this.playlistArtwork,
+    this.coverPlaylist,
     this.playlistData,
     this.onPressed,
     this.onDelete,
@@ -38,6 +39,7 @@ class PlaylistBar extends StatelessWidget {
   });
 
   final Map? playlistData;
+  final Map? coverPlaylist;
   final String? playlistId;
   final String playlistTitle;
   final String? playlistArtwork;
@@ -214,28 +216,31 @@ class PlaylistBar extends StatelessWidget {
                             CollaborativePlaylistService.instance
                                 .makePlaylistCollaborative(pId)
                                 .then((res) {
-                              if (res.success && context.mounted) {
-                                showToast(
-                                  context,
-                                  'Playlist is now collaborative!',
-                                );
-                                final match = userCustomPlaylists.value
-                                    .firstWhere(
-                                  (p) =>
-                                      (p['ytid'] ?? p['id'])?.toString() ==
-                                      pId,
-                                  orElse: () => playlistData!,
-                                );
-                                WidgetsBinding.instance.addPostFrameCallback((_) {
-                                  if (context.mounted) {
-                                    showCollaborativePlaylistShareDialog(
+                                  if (res.success && context.mounted) {
+                                    showToast(
                                       context,
-                                      match,
+                                      'Playlist is now collaborative!',
+                                    );
+                                    final match = storedCustomPlaylists
+                                        .firstWhere(
+                                          (p) =>
+                                              (p['ytid'] ?? p['id'])
+                                                  ?.toString() ==
+                                              pId,
+                                          orElse: () => playlistData!,
+                                        );
+                                    WidgetsBinding.instance.addPostFrameCallback(
+                                      (_) {
+                                        if (context.mounted) {
+                                          showCollaborativePlaylistShareDialog(
+                                            context,
+                                            match,
+                                          );
+                                        }
+                                      },
                                     );
                                   }
                                 });
-                              }
-                            });
                           }
                         }
                         break;
@@ -372,6 +377,18 @@ class PlaylistBar extends StatelessWidget {
   }
 
   Widget _buildPlaylistIcon(ColorScheme colorScheme) {
+    final data = coverPlaylist ?? playlistData;
+    if (data != null && !isArtist) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(4),
+        child: PlaylistCover(
+          playlist: {'image': playlistArtwork, ...data},
+          size: 52,
+          fallbackIcon: cubeIcon,
+          fallback: _buildIconFallback(colorScheme),
+        ),
+      );
+    }
     final artwork = isArtist
         ? normalizeArtistThumbnailUrl(playlistArtwork)
         : playlistArtwork;
@@ -679,66 +696,18 @@ class PlaylistBar extends StatelessWidget {
   }
 
   Future<void> _handleEdit(BuildContext context) async {
-    if (playlistData == null) return;
-
-    final result = await showDialog<Map?>(
+    final playlist = playlistData;
+    final id = (playlist?['ytid'] ?? playlist?['id'])?.toString();
+    if (playlist == null || id == null) return;
+    final changes = await showDialog<Map>(
       context: context,
-      builder: (context) => EditPlaylistDialog(playlistData: playlistData!),
+      builder: (_) => EditPlaylistDialog(playlistData: playlist),
     );
-
-    if (result != null) {
-      final targetId =
-          (playlistData!['ytid'] ?? playlistData!['id'])?.toString();
-      final index = userCustomPlaylists.value.indexWhere(
-        (p) => (p['ytid'] ?? p['id'])?.toString() == targetId,
-      );
-      if (index != -1) {
-        final updatedPlaylists = List<Map>.from(userCustomPlaylists.value);
-        updatedPlaylists[index] = result;
-        userCustomPlaylists.value = updatedPlaylists;
-        unawaited(
-          addOrUpdateData<List<Map>>(
-            'user',
-            'customPlaylists',
-            userCustomPlaylists.value,
-          ),
-        );
-
-        // Update offline playlist if it exists
-        unawaited(syncOfflinePlaylistMetadata(result));
-
-        final appCtx = NavigationManager().context;
-        showToast(appCtx, appCtx.l10n!.playlistUpdated);
-      } else {
-        var folderUpdated = false;
-        final updatedFolders = List<Map>.from(userPlaylistFolders.value);
-        for (final folder in updatedFolders) {
-          final list = List<Map>.from(folder['playlists'] ?? []);
-          final fIndex = list.indexWhere(
-            (p) => (p['ytid'] ?? p['id'])?.toString() == targetId,
-          );
-          if (fIndex != -1) {
-            list[fIndex] = result;
-            folder['playlists'] = list;
-            folderUpdated = true;
-            break;
-          }
-        }
-        if (folderUpdated) {
-          userPlaylistFolders.value = updatedFolders;
-          unawaited(
-            addOrUpdateData<List>(
-              'user',
-              'playlistFolders',
-              userPlaylistFolders.value,
-            ),
-          );
-          unawaited(syncOfflinePlaylistMetadata(result));
-          final appCtx = NavigationManager().context;
-          showToast(appCtx, appCtx.l10n!.playlistUpdated);
-        }
-      }
-    }
+    if (changes == null) return;
+    final updated = updateStoredCustomPlaylist(id, changes);
+    if (updated == null) return;
+    unawaited(syncOfflinePlaylistMetadata(updated));
+    if (context.mounted) showToast(context, context.l10n!.playlistUpdated);
   }
 
   void _handleEditFolder(BuildContext context) {
