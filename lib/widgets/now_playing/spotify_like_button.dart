@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:audio_service/audio_service.dart';
 import 'package:fluentui_system_icons/fluentui_system_icons.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:vybe/main.dart';
 import 'package:vybe/services/common_services.dart';
 import 'package:vybe/utilities/mediaitem.dart';
@@ -132,7 +132,7 @@ class _SpotifyLikeButtonState extends State<SpotifyLikeButton>
         );
       }
     } catch (e) {
-      _isLikedNotifier.value = wasLiked;
+      if (mounted && _audioId == id) _syncStatus();
       logger.log('Error toggling SpotifyLikeButton', error: e);
     }
   }

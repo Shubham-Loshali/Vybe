@@ -6,14 +6,20 @@ import 'package:fluentui_system_icons/fluentui_system_icons.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:vybe/localization/app_localizations.dart';
 import 'package:vybe/screens/home_page.dart';
 import 'package:vybe/services/cloud_sync_service.dart';
 import 'package:vybe/services/common_services.dart';
+import 'package:vybe/services/followed_artists_service.dart';
+import 'package:vybe/services/playlist_download_service.dart';
 import 'package:vybe/services/playlists_manager.dart';
 import 'package:vybe/services/settings_manager.dart';
+import 'package:vybe/theme/app_themes.dart';
 import 'package:vybe/utilities/player_colors.dart';
+import 'package:vybe/widgets/artist_follow_button.dart';
 import 'package:vybe/widgets/marquee.dart';
 import 'package:vybe/widgets/mini_player.dart';
+import 'package:vybe/widgets/now_playing/spotify_like_button.dart';
 import 'package:vybe/widgets/playlist_cover.dart';
 import 'package:vybe/widgets/playlist_cube.dart';
 import 'package:vybe/widgets/playlist_page/playlist_header.dart';
@@ -36,6 +42,114 @@ void main() {
     await audio.close();
     await Hive.close();
     await directory.delete(recursive: true);
+  });
+
+  testWidgets('artist profile follow button persists after repeated taps', (
+    tester,
+  ) async {
+    const artistId = 'widget-test-artist';
+    final service = FollowedArtistsService.instance;
+    final previous = service.followedArtists.value;
+    final previouslyLiked = userLikedPlaylists.value;
+    addTearDown(() {
+      service.followedArtists.value = previous;
+      userLikedPlaylists.value = previouslyLiked;
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: getAppTheme(getAppColorScheme(null, null)),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        home: const Scaffold(
+          body: Center(
+            child: ArtistFollowButton(
+              artistData: {'ytid': artistId, 'title': 'Test artist'},
+            ),
+          ),
+        ),
+      ),
+    );
+
+    for (var i = 0; i < 10; i++) {
+      await tester.tap(find.text('Follow'));
+      await tester.pumpAndSettle();
+      expect(service.isFollowing(artistId), isTrue);
+      expect(
+        Hive.box('user').get('followedArtists'),
+        contains(containsPair('ytid', artistId)),
+      );
+      await tester.tap(find.text('Following'));
+      await tester.pumpAndSettle();
+      expect(service.isFollowing(artistId), isFalse);
+    }
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('now playing like follows the track when switching songs', (
+    tester,
+  ) async {
+    final previous = userLikedSongsList.value;
+    addTearDown(() => userLikedSongsList.value = previous);
+    Widget player(String id) => uiApp(
+      SpotifyLikeButton(
+        metadata: MediaItem(id: id, title: id, extras: {'ytid': id}),
+      ),
+    );
+    final unliked = find.byIcon(FluentIcons.heart_24_regular);
+    final liked = find.byIcon(FluentIcons.heart_24_filled);
+    await tester.pumpWidget(player('first-track-like-test'));
+    await tester.tap(unliked);
+    await tester.pumpAndSettle();
+    expect(liked, findsOneWidget);
+
+    await tester.pumpWidget(player('second-track-like-test'));
+    expect(unliked, findsOneWidget);
+    await tester.pumpWidget(player('first-track-like-test'));
+    expect(liked, findsOneWidget);
+    await tester.tap(liked);
+    await tester.pumpAndSettle();
+    expect(unliked, findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('partially downloaded playlists stay available for retry', (
+    tester,
+  ) async {
+    final service = offlinePlaylistService;
+    const playlistId = 'qa-partial-playlist';
+    final previousSongs = userOfflineSongs.value;
+    final previousPlaylists = service.offlinePlaylists.value;
+    addTearDown(() {
+      userOfflineSongs.value = previousSongs;
+      service.offlinePlaylists.value = previousPlaylists;
+    });
+    final songs = [
+      {'ytid': 'qa-offline-track-a'},
+      {'ytid': 'qa-offline-track-b'},
+    ];
+    userOfflineSongs.value = songs;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: getAppTheme(getAppColorScheme(null, null)),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        home: const Scaffold(body: SizedBox()),
+      ),
+    );
+    final context = tester.element(find.byType(Scaffold));
+
+    await service.downloadPlaylist(context, {
+      'ytid': playlistId,
+      'list': [...songs, null],
+    });
+    await tester.pumpAndSettle();
+    expect(service.isPlaylistDownloaded(playlistId), isFalse);
+    expect(service.isPlaylistDownloading(playlistId), isFalse);
+
+    await service.downloadPlaylist(context, {
+      'ytid': playlistId,
+      'list': songs,
+    });
+    await tester.pumpAndSettle();
+    expect(service.isPlaylistDownloaded(playlistId), isTrue);
   });
 
   test(

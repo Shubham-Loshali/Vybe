@@ -1,0 +1,51 @@
+// Firestore security rules for Listen Together.
+//
+// Paste the `match /listenRooms/{code}` block INSIDE your existing
+//   match /databases/{database}/documents { ... }
+// in Firebase console → Firestore Database → Rules, next to the rules you
+// already have for `users`. Do not replace your existing rules.
+//
+// Optional cleanup: in Firestore → TTL policies, add a policy on the field
+// `expireAt` for the collection groups `listenRooms`, `members` and
+// `commands`. Old sessions are then deleted automatically.
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    match /listenRooms/{code} {
+      function room() {
+        return get(/databases/$(database)/documents/listenRooms/$(code)).data;
+      }
+
+      // Any signed-in user who knows the code can read the room state.
+      allow read: if request.auth != null;
+      // Only the host creates and updates their own room.
+      allow create: if request.auth != null
+                    && request.resource.data.hostUid == request.auth.uid;
+      allow update: if request.auth != null
+                    && resource.data.hostUid == request.auth.uid
+                    && request.resource.data.hostUid == resource.data.hostUid;
+      allow delete: if request.auth != null
+                    && resource.data.hostUid == request.auth.uid;
+
+      // Presence: each user writes only their own member document.
+      match /members/{uid} {
+        allow read: if request.auth != null;
+        allow create, update: if request.auth != null && request.auth.uid == uid;
+        allow delete: if request.auth != null
+                      && (request.auth.uid == uid || room().hostUid == request.auth.uid);
+      }
+
+      // Guest requests (play, pause, seek, skip). Only the host reads and
+      // deletes them.
+      match /commands/{commandId} {
+        allow create: if request.auth != null
+                      && request.resource.data.byUid == request.auth.uid
+                      && room().ended == false;
+        allow read, delete: if request.auth != null
+                            && room().hostUid == request.auth.uid;
+      }
+    }
+  }
+}

@@ -9,8 +9,8 @@ import 'package:hive_ce/hive_ce.dart';
 import 'package:http/http.dart' as http;
 import 'package:vybe/constants/clients.dart';
 import 'package:vybe/main.dart' show logger;
-import 'package:vybe/services/artist_service.dart' show ytMusicClient;
 import 'package:vybe/services/data_manager.dart';
+import 'package:vybe/services/explore_service.dart';
 import 'package:vybe/services/io_service.dart';
 import 'package:vybe/services/lyrics_manager.dart';
 import 'package:vybe/services/playlists_manager.dart';
@@ -79,7 +79,7 @@ void reloadSongLibraryStateFromStorage() {
 }
 
 // Timeouts and durations used across manifest fetching and cache validation.
-const Duration _manifestTimeout = Duration(seconds: 30);
+const Duration _manifestTimeout = Duration(seconds: 12);
 const Duration _cacheValidationDuration = Duration(hours: 1);
 
 /// Fetches a stream manifest for a song, honoring proxy settings.
@@ -146,10 +146,12 @@ Future<String?> _getCachedSongUrl(
 /// Checks if a cached URL still responds successfully.
 Future<bool> _validateCachedUrl(String songId, String cachedUrl) async {
   try {
-    final response = await http.head(
-      Uri.parse(cachedUrl),
-      headers: streamPlaybackHeaders(songId),
-    );
+    final response = await http
+        .head(
+          Uri.parse(cachedUrl),
+          headers: streamPlaybackHeaders(songId),
+        )
+        .timeout(const Duration(milliseconds: 1500));
     return response.statusCode >= 200 && response.statusCode < 300;
   } catch (_) {
     return false;
@@ -157,36 +159,7 @@ Future<bool> _validateCachedUrl(String songId, String cachedUrl) async {
 }
 
 Future<List> fetchSongsList(String searchQuery) async {
-  final query = searchQuery.trim();
-  if (query.isEmpty) return [];
-  try {
-    final tracks = await ytMusicClient.music
-        .searchSongs(query)
-        .timeout(const Duration(seconds: 4));
-    if (tracks.isNotEmpty) {
-      return tracks
-          .map((track) => returnSongLayout(0, track, isCatalogTrack: true))
-          .toList();
-    }
-  } catch (error, stackTrace) {
-    logger.log(
-      'YouTube Music search failed',
-      error: error,
-      stackTrace: stackTrace,
-    );
-  }
-  try {
-    // If not in cache, perform the search
-    final List<Video> searchResults = await ytClient.search.search(query);
-    final songsList = searchResults
-        .map((video) => returnSongLayout(0, video))
-        .toList();
-
-    return songsList;
-  } catch (e, stackTrace) {
-    logger.log('Error in fetchSongsList', error: e, stackTrace: stackTrace);
-    return [];
-  }
+  return ExploreService.instance.searchSongs(searchQuery);
 }
 
 Future<List> getRecommendedSongs() async {
@@ -213,7 +186,12 @@ Future<List> _getRecommendationsFromRecentlyPlayed() async {
   if (seedPool.isEmpty) {
     return await _getRecommendationsFromMixedSources();
   }
-  final recent = (List.from(seedPool)..shuffle()).take(5).toList();
+  // Maintain chronological recency order: most recently played song is seed #0 with highest weight
+  final recent = seedPool
+      .whereType<Map>()
+      .where((s) => (s['ytid']?.toString() ?? '').isNotEmpty)
+      .take(5)
+      .toList();
 
   return _getRecommendationsFromSeedSongs(recent);
 }
@@ -332,10 +310,20 @@ Future<List> _getRecommendationsFromMixedSources() async {
   ];
 
   if (globalSongs.isEmpty) {
-    const playlistId = 'PLgzTt0k8mXzEk586ze4BjvDXR7c-TUSnx';
-    globalSongs = await getSongsFromPlaylist(playlistId);
+    try {
+      final explorePlaylists =
+          await ExploreService.instance.fetchExplorePlaylists();
+      if (explorePlaylists.isNotEmpty) {
+        final firstId = explorePlaylists.first['ytid']?.toString() ?? '';
+        if (firstId.isNotEmpty) {
+          globalSongs = await getSongsFromPlaylist(firstId);
+        }
+      }
+    } catch (_) {}
   }
-  recommendationSources.add(globalSongs.take(10));
+  if (globalSongs.isNotEmpty) {
+    recommendationSources.add(globalSongs.take(10));
+  }
 
   if (userCustomPlaylists.value.isNotEmpty) {
     for (final userPlaylist in userCustomPlaylists.value) {
@@ -531,14 +519,21 @@ bool isSongAlreadyOffline(songIdToCheck) {
 
 bool isPlaylistFullyOffline(List songs) {
   if (songs.isEmpty) return false;
-  final offlineIds = userOfflineSongs.value.map((s) => s['ytid']).toSet();
-  return songs.every((s) => offlineIds.contains(s['ytid']));
+  final offlineIds = userOfflineSongs.value
+      .map((s) => (s is Map ? (s['ytid'] ?? s['id']) : null)?.toString())
+      .whereType<String>()
+      .toSet();
+  return songs.every((s) {
+    if (s is! Map) return false;
+    final id = (s['ytid'] ?? s['id'])?.toString();
+    return id != null && offlineIds.contains(id);
+  });
 }
 
 Map<String, dynamic> getOfflineSongByYtid(String ytid) {
   try {
     final song = userOfflineSongs.value.firstWhere(
-      (s) => s['ytid'] == ytid,
+      (s) => (s['ytid'] ?? s['id'])?.toString() == ytid,
       orElse: () => <String, dynamic>{},
     );
     return Map<String, dynamic>.from(song);
@@ -548,40 +543,7 @@ Map<String, dynamic> getOfflineSongByYtid(String ytid) {
 }
 
 Future<List<String>> getSearchSuggestions(String query) async {
-  // Custom implementation:
-
-  // const baseUrl = 'https://suggestqueries.google.com/complete/search';
-  // final parameters = {
-  //   'client': 'firefox',
-  //   'ds': 'yt',
-  //   'q': query,
-  // };
-
-  // final uri = Uri.parse(baseUrl).replace(queryParameters: parameters);
-
-  // try {
-  //   final response = await http.get(
-  //     uri,
-  //     headers: {
-  //       'User-Agent':
-  //           'Mozilla/5.0 (Windows NT 10.0; rv:96.0) Gecko/20100101 Firefox/96.0',
-  //     },
-  //   );
-
-  //   if (response.statusCode == 200) {
-  //     final suggestions = jsonDecode(response.body)[1] as List<dynamic>;
-  //     final suggestionStrings = suggestions.cast<String>().toList();
-  //     return suggestionStrings;
-  //   }
-  // } catch (e, stackTrace) {
-  //   logger.log('Error in getSearchSuggestions:$e\n$stackTrace');
-  // }
-
-  // Built-in implementation:
-
-  final suggestions = await ytClient.search.getQuerySuggestions(query);
-
-  return suggestions;
+  return ExploreService.instance.getSearchSuggestions(query);
 }
 
 // Throws on network, HTTP and parsing failure instead of swallowing it, so
@@ -628,7 +590,8 @@ Future<List<Map<String, int>>> _fetchSkipSegments(String id) async {
 
 Future<List<Map<String, int>>> getSkipSegments(String id) async {
   try {
-    return await _fetchSkipSegments(id);
+    return await _fetchSkipSegments(id)
+        .timeout(const Duration(milliseconds: 1500));
   } catch (e, stackTrace) {
     logger.log('Error in getSkipSegments', error: e, stackTrace: stackTrace);
     return [];
@@ -699,9 +662,12 @@ void _cacheSelectedAudioStream(String songId, AudioOnlyStreamInfo stream) {
   );
 }
 
+final Map<String, ({String url, DateTime expiry})> _memoryStreamUrlCache = {};
+
 /// Drops both cached forms of a song's stream, so the next request resolves
 /// it again. Used when a cached URL turns out to be dead.
 Future<void> invalidateSongStreamCache(String songId) async {
+  _memoryStreamUrlCache.remove(songId);
   _selectedAudioStreams.remove(_selectedAudioStreamKey(songId));
   await deleteData('cache', 'song_${songId}_${audioQualitySetting.value}_url');
 }
@@ -760,12 +726,22 @@ Future<String?> fetchSongStreamUrl(String songId, bool isLive) async {
       return streamInfo;
     }
 
+    // Fast in-memory cache check (0ms playback start)
+    final mem = _memoryStreamUrlCache[songId];
+    if (mem != null && DateTime.now().isBefore(mem.expiry)) {
+      return mem.url;
+    }
+
     const _cacheDuration = Duration(hours: 3);
     final cacheKey = 'song_${songId}_${audioQualitySetting.value}_url';
 
     // Try to get from cache
     final cachedUrl = await _getCachedSongUrl(songId, cacheKey, _cacheDuration);
     if (cachedUrl != null) {
+      _memoryStreamUrlCache[songId] = (
+        url: cachedUrl,
+        expiry: DateTime.now().add(const Duration(minutes: 90)),
+      );
       return cachedUrl;
     }
 
@@ -777,6 +753,14 @@ Future<String?> fetchSongStreamUrl(String songId, bool isLive) async {
     }
 
     final url = selectedStream.url.toString();
+
+    if (_memoryStreamUrlCache.length > 200) {
+      _memoryStreamUrlCache.remove(_memoryStreamUrlCache.keys.first);
+    }
+    _memoryStreamUrlCache[songId] = (
+      url: url,
+      expiry: DateTime.now().add(const Duration(minutes: 90)),
+    );
 
     unawaited(addOrUpdateData<String>('cache', cacheKey, url));
 
@@ -911,15 +895,25 @@ Future<Lyrics?> getSongLyricsResult(
   return result;
 }
 
-Future<bool> makeSongOffline(dynamic song) async {
+final _activeSongDownloads = <String, Future<bool>>{};
+
+Future<bool> makeSongOffline(dynamic song) {
+  final ytid = song is Map ? (song['ytid'] ?? song['id'])?.toString() : null;
+  if (ytid == null || ytid.isEmpty) {
+    logger.log('makeSongOffline: missing song ID');
+    return Future.value(false);
+  }
+  // The playlist and single-track controls write to the same audio file.
+  return _activeSongDownloads.putIfAbsent(
+    ytid,
+    () => _downloadSongOffline(song as Map, ytid).whenComplete(() {
+      _activeSongDownloads.remove(ytid);
+    }),
+  );
+}
+
+Future<bool> _downloadSongOffline(Map song, String ytid) async {
   try {
-    final String? ytid = song['ytid'];
-
-    if (ytid == null || ytid.isEmpty) {
-      logger.log('makeSongOffline: song["ytid"] is null or empty');
-      return false;
-    }
-
     if (isSongAlreadyOffline(ytid)) {
       final existingPath = FilePaths.getAudioPath(ytid);
       if (await File(existingPath).exists()) {
@@ -928,7 +922,7 @@ Future<bool> makeSongOffline(dynamic song) async {
       }
     }
 
-    final offlineSong = Map<String, dynamic>.from(song as Map);
+    final offlineSong = Map<String, dynamic>.from(song)..['ytid'] = ytid;
 
     final audioPath = FilePaths.getAudioPath(ytid);
     final audioFile = File(audioPath);

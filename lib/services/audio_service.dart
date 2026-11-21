@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:audio_service/audio_service.dart';
 import 'package:audio_session/audio_session.dart';
@@ -12,6 +13,7 @@ import 'package:vybe/models/position_data.dart';
 import 'package:vybe/services/audio_service_android_auto.dart';
 import 'package:vybe/services/common_services.dart';
 import 'package:vybe/services/data_manager.dart';
+import 'package:vybe/services/io_service.dart';
 import 'package:vybe/services/listening_stats_service.dart';
 import 'package:vybe/services/settings_manager.dart';
 import 'package:vybe/services/update_manager.dart';
@@ -21,24 +23,20 @@ import 'package:vybe/utilities/mediaitem.dart';
 import 'package:vybe/utilities/platform_utils.dart';
 import 'package:vybe/utilities/queue_entry_utils.dart';
 
+/// Receives a guest's playback action so it can be sent to the session host
+/// instead of being applied locally.
+typedef RemoteCommandSink =
+    void Function(String type, {Duration? position, Map? song});
+
 class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
   VybeAudioHandler() {
-    final androidEqualizer = Platform.isAndroid ? AndroidEqualizer() : null;
-    _androidEqualizer = androidEqualizer;
-    audioPlayer = AudioPlayer(
-      handleInterruptions: isMobilePlatform,
-      handleAudioSessionActivation: isMobilePlatform,
-      audioPipeline: androidEqualizer == null
-          ? null
-          : AudioPipeline(androidAudioEffects: [androidEqualizer]),
-      audioLoadConfiguration: const AudioLoadConfiguration(
-        androidLoadControl: AndroidLoadControl(
-          maxBufferDuration: Duration(seconds: 60),
-          bufferForPlaybackDuration: Duration(milliseconds: 500),
-          bufferForPlaybackAfterRebufferDuration: Duration(seconds: 3),
-        ),
-      ),
-    );
+    // Two identical players: only one is "active" at a time and every
+    // existing code path goes through [audioPlayer], which returns it. The
+    // other one stays idle and is used only to pre-load the next song for a
+    // crossfade. With crossfade off it is never loaded, so it costs nothing.
+    _primaryPlayer = _createPlayer();
+    _secondaryPlayer = _createPlayer();
+    _activePlayer = BehaviorSubject<AudioPlayer>.seeded(_primaryPlayer);
 
     _androidAutoBrowser = AndroidAutoBrowser(this);
     _setupEventSubscriptions();
@@ -48,23 +46,110 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
     _updatePlaybackState();
 
     if (isAndroidPlatform) {
-      audioPlayer.setAndroidAudioAttributes(
-        const AndroidAudioAttributes(
-          contentType: AndroidAudioContentType.music,
-          usage: AndroidAudioUsage.media,
-        ),
-      );
+      for (final player in _allPlayers) {
+        player.setAndroidAudioAttributes(
+          const AndroidAudioAttributes(
+            contentType: AndroidAudioContentType.music,
+            usage: AndroidAudioUsage.media,
+          ),
+        );
+      }
     }
+
+    crossfadeSeconds.addListener(_onCrossfadeSettingChanged);
 
     _initialize();
   }
 
+  AudioPlayer _createPlayer() {
+    final androidEqualizer = Platform.isAndroid ? AndroidEqualizer() : null;
+    final player = AudioPlayer(
+      handleInterruptions: isMobilePlatform,
+      handleAudioSessionActivation: isMobilePlatform,
+      audioPipeline: androidEqualizer == null
+          ? null
+          : AudioPipeline(androidAudioEffects: [androidEqualizer]),
+      audioLoadConfiguration: const AudioLoadConfiguration(
+        androidLoadControl: AndroidLoadControl(
+          minBufferDuration: Duration(seconds: 15),
+          maxBufferDuration: Duration(seconds: 60),
+          bufferForPlaybackDuration: Duration(milliseconds: 250),
+          bufferForPlaybackAfterRebufferDuration: Duration(seconds: 2),
+          prioritizeTimeOverSizeThresholds: true,
+        ),
+      ),
+    );
+    if (androidEqualizer != null) {
+      _equalizers[player] = androidEqualizer;
+    }
+    return player;
+  }
+
   // Player and service collaborators.
-  late final AndroidEqualizer? _androidEqualizer;
-  late final AudioPlayer audioPlayer;
+  final Map<AudioPlayer, AndroidEqualizer> _equalizers = {};
+  final Set<AndroidEqualizer> _configuredEqualizers = {};
+  late final AudioPlayer _primaryPlayer;
+  late final AudioPlayer _secondaryPlayer;
+  late final BehaviorSubject<AudioPlayer> _activePlayer;
   late final AndroidAutoBrowser _androidAutoBrowser;
-  bool _equalizerInitialized = false;
+
+  /// The player currently producing the audible, tracked song.
+  AudioPlayer get audioPlayer => _activePlayer.value;
+  AudioPlayer get _standbyPlayer =>
+      identical(audioPlayer, _primaryPlayer) ? _secondaryPlayer : _primaryPlayer;
+  List<AudioPlayer> get _allPlayers => [_primaryPlayer, _secondaryPlayer];
+  AndroidEqualizer? get _androidEqualizer => _equalizers[audioPlayer];
+  bool get _equalizerInitialized {
+    final equalizer = _androidEqualizer;
+    return equalizer != null && _configuredEqualizers.contains(equalizer);
+  }
+
+  /// Follows whichever player is active, re-subscribing after a crossfade.
+  Stream<T> _fromActive<T>(Stream<T> Function(AudioPlayer player) select) =>
+      _activePlayer.switchMap(select);
+
+  // User-chosen volume. Kept separately from the players' own volume because
+  // a crossfade ramps the players' volume up and down underneath it.
+  final BehaviorSubject<double> _userVolume = BehaviorSubject<double>.seeded(
+    1,
+  );
+
+  // Crossfade state.
+  static const Duration _crossfadeLeadTime = Duration(seconds: 15);
+  static const Duration _crossfadeMinFade = Duration(seconds: 1);
+  static const Duration _crossfadeMinPrepWindow = Duration(seconds: 3);
+  static const Duration _crossfadeTick = Duration(milliseconds: 50);
+  static const Duration _crossfadeLoadTimeout = Duration(seconds: 20);
+  int _crossfadeToken = 0;
+  String? _crossfadePrepKey;
+  _PreparedCrossfade? _preparedCrossfade;
+  Timer? _crossfadeRampTimer;
+  AudioPlayer? _fadingOutPlayer;
+  final Map<AudioPlayer, Stream<Duration>> _lyricsPositionStreams = {};
+
+  // Listen Together hooks. All of them are inert unless a session is active.
+  bool _syncSessionActive = false;
+  RemoteCommandSink? _remoteCommandSink;
+  void Function()? _onRemoteFollowerStopped;
+  final StreamController<String> _syncEventsController =
+      StreamController<String>.broadcast();
+
+  /// Host-side playback events ('play', 'pause', 'seek', 'song').
+  Stream<String> get syncEvents => _syncEventsController.stream;
+  bool get isSyncSessionActive => _syncSessionActive;
+
+  /// True for a Listen Together guest: user actions go to the host.
+  bool get isFollowingRemote => _remoteCommandSink != null;
+
+  /// Whether the current queue song is loaded in the player (not loading,
+  /// not failed), so its position can be trusted.
+  bool get isCurrentSongLoaded =>
+      _currentLoadingIndex < 0 &&
+      audioPlayer.processingState != ProcessingState.idle &&
+      _playerSourceMatchesCurrentSong();
+
   Future<bool>? _equalizerInitFuture;
+  AndroidEqualizer? _equalizerInitTarget;
   DateTime _equalizerRetryNotBefore = DateTime.fromMillisecondsSinceEpoch(0);
 
   // Queue contents and active positions.
@@ -115,9 +200,9 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
   // Derived player streams.
   late final Stream<PositionData> _positionDataStream =
       Rx.combineLatest3<Duration, Duration, Duration?, PositionData>(
-        audioPlayer.positionStream,
-        audioPlayer.bufferedPositionStream,
-        audioPlayer.durationStream,
+        _fromActive((player) => player.positionStream),
+        _fromActive((player) => player.bufferedPositionStream),
+        _fromActive((player) => player.durationStream),
         (position, bufferedPosition, duration) =>
             PositionData(position, bufferedPosition, duration ?? Duration.zero),
       ).distinct((prev, curr) {
@@ -129,14 +214,23 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
 
   Stream<PositionData> get positionDataStream => _positionDataStream;
 
-  late final Stream<Duration> lyricsPositionStream = audioPlayer
-      .createPositionStream(
-        minPeriod: const Duration(milliseconds: 85),
-        maxPeriod: const Duration(milliseconds: 85),
+  // One position stream per player, created once: just_audio keeps each
+  // created stream alive for the player's lifetime, so never create more.
+  Stream<Duration> _lyricsPositionStreamFor(AudioPlayer player) =>
+      _lyricsPositionStreams.putIfAbsent(
+        player,
+        () => player.createPositionStream(
+          minPeriod: const Duration(milliseconds: 85),
+          maxPeriod: const Duration(milliseconds: 85),
+        ),
       );
 
-  Stream<double> get volumeStream => audioPlayer.volumeStream;
-  double get volume => audioPlayer.volume;
+  late final Stream<Duration> lyricsPositionStream = _fromActive(
+    _lyricsPositionStreamFor,
+  );
+
+  Stream<double> get volumeStream => _userVolume.stream;
+  double get volume => _userVolume.value;
 
   /// Current snapshot, for listeners that subscribe while paused and would
   /// otherwise see nothing until the next position event.
@@ -219,7 +313,7 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
   }
 
   void _setupEventSubscriptions() {
-    audioPlayer.playbackEventStream
+    _fromActive((player) => player.playbackEventStream)
         .throttleTime(const Duration(milliseconds: 100))
         .listen(
           (event) {
@@ -230,14 +324,14 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
           },
         );
 
-    audioPlayer.processingStateStream.distinct().listen(
+    _fromActive((player) => player.processingStateStream).distinct().listen(
       _handleProcessingStateChange,
       onError: (error, stackTrace) {
         _logStreamError('Processing state stream error', error, stackTrace);
       },
     );
 
-    audioPlayer.durationStream.listen(
+    _fromActive((player) => player.durationStream).listen(
       (duration) {
         if (_currentQueueIndex >= 0 &&
             _currentQueueIndex < _queueList.length &&
@@ -254,7 +348,7 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
       },
     );
 
-    audioPlayer.playerStateStream.distinct().listen(
+    _fromActive((player) => player.playerStateStream).distinct().listen(
       (state) {
         listeningStatsService.handlePlayerStateForListeningStats(
           state,
@@ -273,8 +367,8 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
     );
 
     Rx.combineLatest2(
-          audioPlayer.currentIndexStream.distinct(),
-          audioPlayer.sequenceStateStream.distinct(),
+          _fromActive((player) => player.currentIndexStream).distinct(),
+          _fromActive((player) => player.sequenceStateStream).distinct(),
           (index, sequence) => {'index': index, 'sequence': sequence},
         )
         .throttleTime(const Duration(milliseconds: 100))
@@ -284,6 +378,34 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
             _logStreamError('Current index stream error', error, stackTrace);
           },
         );
+
+    // Crossfade scheduler. Returns immediately while crossfade is off.
+    _fromActive((player) => player.positionStream)
+        .throttleTime(const Duration(milliseconds: 250))
+        .listen(
+          _onCrossfadePositionTick,
+          onError: (error, stackTrace) {
+            _logStreamError('Crossfade position error', error, stackTrace);
+          },
+        );
+
+    // Safety net: a player that is neither active nor fading out must never
+    // be audible (e.g. an audio-focus "resume" reaching a stopped player).
+    for (final player in _allPlayers) {
+      player.playingStream.listen(
+        (playing) {
+          if (playing &&
+              !identical(player, audioPlayer) &&
+              !identical(player, _fadingOutPlayer)) {
+            logger.log('Stopping inactive player that started unexpectedly');
+            _stopQuietly(player);
+          }
+        },
+        onError: (error, stackTrace) {
+          _logStreamError('Playing stream error', error, stackTrace);
+        },
+      );
+    }
   }
 
   void _debouncedStateUpdate() {
@@ -502,10 +624,12 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
 
       // Always set loop mode to off - we handle all repeating through _handleSongCompletion
       // This ensures ProcessingState.completed is always fired for song transitions
-      await audioPlayer.setLoopMode(LoopMode.off);
+      for (final player in _allPlayers) {
+        await player.setLoopMode(LoopMode.off);
 
-      // Apply stored shuffle mode to audio player
-      await audioPlayer.setShuffleModeEnabled(shuffleNotifier.value);
+        // Apply stored shuffle mode to audio player
+        await player.setShuffleModeEnabled(shuffleNotifier.value);
+      }
 
       // Initialize equalizer once at startup
       unawaited(_ensureEqualizerConfigured());
@@ -531,16 +655,22 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
       return false;
     }
 
+    final targetEqualizer = _androidEqualizer;
     final inFlight = _equalizerInitFuture;
-    if (inFlight != null) {
+    if (inFlight != null && identical(_equalizerInitTarget, targetEqualizer)) {
       return inFlight;
     }
 
-    _equalizerInitFuture = _configureEqualizer();
+    final future = _configureEqualizer();
+    _equalizerInitFuture = future;
+    _equalizerInitTarget = targetEqualizer;
     try {
-      return await _equalizerInitFuture!;
+      return await future;
     } finally {
-      _equalizerInitFuture = null;
+      if (identical(_equalizerInitFuture, future)) {
+        _equalizerInitFuture = null;
+        _equalizerInitTarget = null;
+      }
     }
   }
 
@@ -548,6 +678,16 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
     final equalizer = _androidEqualizer;
     if (equalizer == null) return false;
 
+    final configured = await _applySavedEqualizerSettings(equalizer);
+    _equalizerRetryNotBefore = configured
+        ? DateTime.fromMillisecondsSinceEpoch(0)
+        : DateTime.now().add(const Duration(seconds: 10));
+    return configured;
+  }
+
+  /// Applies the persisted equalizer settings to [equalizer]. Used for the
+  /// active player and, before a crossfade, for the standby player.
+  Future<bool> _applySavedEqualizerSettings(AndroidEqualizer equalizer) async {
     try {
       final params = await equalizer.parameters.timeout(
         const Duration(seconds: 3),
@@ -565,13 +705,9 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
       }
 
       await equalizer.setEnabled(equalizerEnabled.value);
-      _equalizerInitialized = true;
-      _equalizerRetryNotBefore = DateTime.fromMillisecondsSinceEpoch(0);
+      _configuredEqualizers.add(equalizer);
       return true;
     } catch (e, stackTrace) {
-      _equalizerRetryNotBefore = DateTime.now().add(
-        const Duration(seconds: 10),
-      );
       logger.log(
         'Equalizer initialization deferred',
         error: e,
@@ -608,6 +744,7 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
     try {
       await equalizer.setEnabled(enabled);
       equalizerEnabled.value = enabled;
+      _markOtherEqualizersStale(equalizer);
       unawaited(addOrUpdateData<bool>('settings', 'equalizerEnabled', enabled));
     } catch (e, stackTrace) {
       logger.log(
@@ -636,6 +773,7 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
 
       final gains = params.bands.map((band) => band.gain).toList();
       equalizerBandGains.value = gains;
+      _markOtherEqualizersStale(equalizer);
       unawaited(
         addOrUpdateData<List<double>>('settings', 'equalizerBandGains', gains),
       );
@@ -662,6 +800,7 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
       }
       final gains = List<double>.filled(params.bands.length, 0);
       equalizerBandGains.value = gains;
+      _markOtherEqualizersStale(equalizer);
       unawaited(
         addOrUpdateData<List<double>>('settings', 'equalizerBandGains', gains),
       );
@@ -671,6 +810,16 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
         error: e,
         stackTrace: stackTrace,
       );
+    }
+  }
+
+  /// After a settings change on [updated], every other player's equalizer is
+  /// out of date and gets the saved settings re-applied before it is used.
+  void _markOtherEqualizersStale(AndroidEqualizer updated) {
+    _configuredEqualizers.removeWhere((eq) => !identical(eq, updated));
+    // The active player may have changed while the update was in flight.
+    if (!_equalizerInitialized) {
+      unawaited(_ensureEqualizerConfigured(force: true));
     }
   }
 
@@ -835,6 +984,12 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
       playNextSongAutomatically.value;
 
   void _handlePlaybackError() {
+    if (isFollowingRemote) {
+      // Skipping would change the host's song; the session retries the load.
+      _lastError = null;
+      _consecutiveErrors = 0;
+      return;
+    }
     _consecutiveErrors++;
     logger.log(
       'Playback error occurred. Consecutive errors: $_consecutiveErrors',
@@ -861,6 +1016,9 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
   }
 
   Future<void> _handleSongCompletion() async {
+    // A guest never advances on its own; the host's next song arrives
+    // through the session.
+    if (isFollowingRemote) return;
     try {
       if (_hasCurrentQueueIndex) {
         _addToHistory(_queueList[_currentQueueIndex]);
@@ -962,6 +1120,11 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
     try {
       if (song['ytid'] == null || song['ytid'].toString().isEmpty) {
         logger.log('Invalid song data for queue');
+        return;
+      }
+
+      // A guest adds to the host's queue, which everyone shares.
+      if (_forwardRemote(playNext ? 'queueNext' : 'queue', song: song)) {
         return;
       }
 
@@ -1076,6 +1239,17 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
     int? startIndex,
     bool? shuffle,
   }) async {
+    // A guest's queue only mirrors the host: ask the host to play the chosen
+    // song instead of replacing the local queue.
+    if (isFollowingRemote) {
+      final start = startIndex ?? 0;
+      if ((replace || startIndex != null) &&
+          start >= 0 &&
+          start < songs.length) {
+        _forwardRemote('playSong', song: songs[start]);
+      }
+      return;
+    }
     try {
       final manuallyAddedSongs = replace ? _getUnplayedManualSongs() : <Map>[];
       final shuffleAfterReplace = shuffle ?? shuffleNotifier.value;
@@ -1109,8 +1283,10 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
           : null;
 
       for (var i = 0; i < songs.length; i++) {
-        final song = songs[i];
-        if (song['ytid'] != null && song['ytid'].toString().isNotEmpty) {
+        final song = Map<String, dynamic>.from(songs[i]);
+        song['ytid'] ??= song['id'];
+        final ytid = song['ytid']?.toString();
+        if (ytid != null && ytid.isNotEmpty) {
           final queueSong = _queueEntryIds.createSong(song);
           if (replace) {
             newSongs.add(queueSong);
@@ -1154,7 +1330,7 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
       }
 
       _hydrateQueueEntryIds();
-      _updateQueueMediaItems();
+      _updateQueueMediaItems(publishCurrentItem: !replace || _queueList.isEmpty);
 
       if (targetQueueIndex != null) {
         await _playFromQueue(targetQueueIndex);
@@ -1173,6 +1349,9 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
   }
 
   Future<void> removeFromQueue(int index) async {
+    // A guest's one-song queue mirrors the host; removing it would stop
+    // playback and leave the session.
+    if (isFollowingRemote) return;
     try {
       if (index < 0 || index >= _queueList.length) return;
 
@@ -1295,7 +1474,7 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
     }
   }
 
-  void _updateQueueMediaItems() {
+  void _updateQueueMediaItems({bool publishCurrentItem = true}) {
     try {
       _queueEntryIds.ensureIds(_queueList);
 
@@ -1304,7 +1483,9 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
 
       _queueMapStream.add(List.unmodifiable(_queueList));
 
-      if (_currentQueueIndex >= 0 && _currentQueueIndex < mediaItems.length) {
+      if (publishCurrentItem &&
+          _currentQueueIndex >= 0 &&
+          _currentQueueIndex < mediaItems.length) {
         final currentMediaItem = mediaItems[_currentQueueIndex];
         mediaItem.add(currentMediaItem);
       }
@@ -1364,11 +1545,24 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
     }
   }
 
-  Future<void> _playFromQueue(int index, {bool playWhenReady = true}) async {
+  Future<void> _playFromQueue(
+    int index, {
+    bool playWhenReady = true,
+    bool fromSync = false,
+  }) async {
     if (index < 0 || index >= _queueList.length) {
       logger.log('Invalid queue index: $index');
       return;
     }
+
+    // A guest asks the host to play the song instead of playing it alone.
+    if (!fromSync && _forwardRemote('playSong', song: _queueList[index])) {
+      return;
+    }
+
+    // Any explicit song change ends a running crossfade and drops a
+    // pre-loaded next song; the normal load path below takes over.
+    _abortCrossfade();
 
     // If already loading any song, skip the request
     // UNLESS we're in the middle of handling a completion event (allow one load attempt)
@@ -1393,15 +1587,19 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
     _currentLoadingTransitionId = currentTransitionId;
     _queuePlayWhenReady = playWhenReady;
 
-    // Immediately pause any active playback so old audio does not keep playing
+    // Immediately pause any active playback across all players so old audio does not keep playing
     // while the new track's stream URL is being resolved and prepared.
     try {
-      if (audioPlayer.playing) {
-        unawaited(audioPlayer.pause());
+      for (final player in _allPlayers) {
+        if (_isStaleTransition(currentTransitionId)) return;
+        if (player.playing) {
+          await player.pause();
+        }
       }
     } catch (_) {}
 
     try {
+      if (_isStaleTransition(currentTransitionId)) return;
       final previousQueueIndex = _currentQueueIndex;
       final previousMediaItem = mediaItem.valueOrNull;
       _currentQueueIndex = index;
@@ -1410,9 +1608,7 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
       final currentMediaItem = _getMediaItemForQueue(currentSong);
       final uniqueId = currentMediaItem.id;
 
-      await Future.microtask(() {
-        mediaItem.add(currentMediaItem);
-      });
+      mediaItem.add(currentMediaItem);
 
       _emitOptimisticLoadingState(
         queueIndex: _currentQueueIndex,
@@ -1431,22 +1627,27 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
         if (success) {
           _consecutiveErrors = 0;
           _preloadUpcomingSongs();
-          // Trigger background song addition if auto-play is enabled
-          if (playNextSongAutomatically.value) {
-            unawaited(_backgroundAddSongsToQueue());
-          }
+          _emitSyncEvent('song');
         } else {
           _currentQueueIndex = previousQueueIndex;
           if (previousMediaItem != null) {
             mediaItem.add(previousMediaItem);
           }
-          _updatePlaybackState();
-          _handlePlaybackError();
+          for (final player in _allPlayers) {
+            if (_isStaleTransition(currentTransitionId)) return;
+            try {
+              if (player.playing) await player.stop();
+            } catch (_) {}
+          }
+          if (!_isStaleTransition(currentTransitionId)) {
+            _updatePlaybackState();
+            _handlePlaybackError();
+          }
         }
       }
     } catch (e, stackTrace) {
       logger.log('Error playing from queue', error: e, stackTrace: stackTrace);
-      _handlePlaybackError();
+      if (!_isStaleTransition(currentTransitionId)) _handlePlaybackError();
     } finally {
       // Only reset if this is still the transition that started it
       if (currentTransitionId == _currentLoadingTransitionId) {
@@ -1725,6 +1926,12 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
 
   @override
   Future<void> play() async {
+    if (_forwardRemote('play')) return;
+    await _playLocal();
+  }
+
+  Future<void> _playLocal() async {
+    _emitSyncEvent('play');
     if (isDesktopPlatform && _currentLoadingIndex >= 0)
       _queuePlayWhenReady = true;
     try {
@@ -1759,8 +1966,14 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
 
   @override
   Future<void> pause() async {
+    if (_forwardRemote('pause')) return;
+    await _pauseLocal();
+  }
+
+  Future<void> _pauseLocal() async {
     if (isDesktopPlatform && _currentLoadingIndex >= 0)
       _queuePlayWhenReady = false;
+    _finishCrossfadeNow();
     try {
       listeningStatsService.recordListeningSessionProgress(
         wasPlaying: audioPlayer.playing,
@@ -1770,11 +1983,16 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
     } catch (e, stackTrace) {
       logger.log('Error in pause()', error: e, stackTrace: stackTrace);
     }
+    _emitSyncEvent('pause');
   }
 
   Future<void> setVolume(double value) async {
     try {
-      await audioPlayer.setVolume(value.clamp(0.0, 1.0));
+      final volume = value.clamp(0.0, 1.0);
+      _userVolume.add(volume);
+      // During a crossfade the ramp applies the new volume on its next tick.
+      if (_fadingOutPlayer != null) return;
+      await audioPlayer.setVolume(volume);
     } catch (e, stackTrace) {
       logger.log('Error in setVolume()', error: e, stackTrace: stackTrace);
     }
@@ -1782,12 +2000,20 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
 
   @override
   Future<void> stop() async {
+    // A guest stopping playback (notification, sleep timer, swiping the app
+    // away) leaves the session.
+    final onFollowerStopped = _onRemoteFollowerStopped;
+    if (onFollowerStopped != null) {
+      _onRemoteFollowerStopped = null;
+      scheduleMicrotask(onFollowerStopped);
+    }
     _debounceTimer?.cancel();
     _completionEventPending = false;
     _currentLoadingIndex = -1;
     _currentLoadingTransitionId = -1;
     _lastError = null;
     _consecutiveErrors = 0;
+    _abortCrossfade();
     try {
       listeningStatsService.finishListeningSession(
         countCurrentTick: true,
@@ -1820,12 +2046,22 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
 
   @override
   Future<void> setSpeed(double speed) async {
-    await audioPlayer.setSpeed(speed);
+    final active = audioPlayer;
+    for (final player in _allPlayers) {
+      if (!identical(player, active)) unawaited(player.setSpeed(speed));
+    }
+    await active.setSpeed(speed);
     _updatePlaybackState();
   }
 
   @override
   Future<void> seek(Duration position) async {
+    if (_forwardRemote('seek', position: position)) return;
+    await _seekLocal(position);
+  }
+
+  Future<void> _seekLocal(Duration position) async {
+    _finishCrossfadeNow();
     try {
       listeningStatsService.recordListeningSessionProgress(
         wasPlaying: audioPlayer.playing,
@@ -1835,6 +2071,7 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
     } catch (e, stackTrace) {
       logger.log('Error in seek()', error: e, stackTrace: stackTrace);
     }
+    _emitSyncEvent('seek');
   }
 
   @override
@@ -1856,6 +2093,7 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
 
   Future<bool> _resolveOfflineAndSetPaths(Map songData) async {
     try {
+      songData['ytid'] ??= songData['id'];
       final ytid = songData['ytid']?.toString();
       if (ytid != null && ytid.isNotEmpty) {
         final offlineSong = getOfflineSongByYtid(ytid);
@@ -1906,12 +2144,14 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
     bool playWhenReady = true,
   }) async {
     try {
+      if (_isStaleTransition(transitionId)) return false;
       if (isAppBlockedByUpdate.value) {
         logger.log('Playback blocked: app update required');
         return false;
       }
 
       final songData = cloneMap(song);
+      songData['ytid'] ??= songData['id'];
 
       if (songData['ytid'] == null || songData['ytid'].toString().isEmpty) {
         logger.log('Invalid song data: missing ytid');
@@ -1919,12 +2159,28 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
       }
 
       _lastError = null;
-      if (audioPlayer.playing) {
-        listeningStatsService.recordListeningSessionProgress(
-          wasPlaying: audioPlayer.playing,
-        );
-        await audioPlayer.pause();
+      _emitOptimisticLoadingState(
+        song: songData,
+        includeMediaItem: transitionId == null,
+        mediaId: mediaId,
+      );
+      for (final player in _allPlayers) {
+        if (_isStaleTransition(transitionId)) return false;
+        try {
+          if (player.playing) {
+            listeningStatsService.recordListeningSessionProgress(
+              wasPlaying: player.playing,
+            );
+            await player.pause();
+          }
+        } catch (_) {}
       }
+
+      final ytid = songData['ytid']?.toString();
+      final sponsorBlockFuture =
+          (sponsorBlockSupport.value && !_syncSessionActive && ytid != null)
+              ? getSkipSegments(ytid)
+              : Future.value(<Map<String, int>>[]);
 
       final playback = await _resolvePlaybackSource(songData);
 
@@ -1943,16 +2199,13 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
         return false;
       }
 
-      _emitOptimisticLoadingState(
-        song: songData,
-        includeMediaItem: true,
-        mediaId: mediaId,
-      );
+      final skipSegments = await sponsorBlockFuture;
 
       final audioSource = await buildAudioSource(
         songData,
         playback.songUrl,
         playback.isOffline,
+        preloadedSegments: skipSegments,
       );
 
       // Check again after building the audio source (SponsorBlock fetch can also be slow).
@@ -1979,6 +2232,7 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
         playWhenReady: playWhenReady,
       );
     } catch (e, stackTrace) {
+      if (_isStaleTransition(transitionId)) return false;
       logger.log('Error playing song', error: e, stackTrace: stackTrace);
       _lastError = e.toString();
       return false;
@@ -2047,18 +2301,24 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
   }
 
   Future<String?> _getOfflineSongUrl(Map song) async {
+    song['ytid'] ??= song['id'];
+    final ytid = song['ytid']?.toString();
     final audioPath = song['audioPath']?.toString();
-    if (audioPath == null || audioPath.isEmpty) {
-      logger.log('Missing audioPath for offline song: ${song['ytid']}');
-      return null;
+
+    if (audioPath != null && audioPath.isNotEmpty) {
+      final file = File(audioPath);
+      if (await file.exists()) {
+        return audioPath;
+      }
     }
 
-    final file = File(audioPath);
-    if (await file.exists()) {
-      return audioPath;
+    if (ytid != null && ytid.isNotEmpty) {
+      final dynamicPath = FilePaths.getAudioPath(ytid);
+      if (await File(dynamicPath).exists()) {
+        song['audioPath'] = dynamicPath;
+        return dynamicPath;
+      }
     }
-
-    logger.log('Offline audio file not found: $audioPath');
 
     final offlineSong = userOfflineSongs.value.firstWhere(
       (s) => s['ytid'] == song['ytid'],
@@ -2067,14 +2327,16 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
 
     if (offlineSong.isNotEmpty && offlineSong['audioPath'] != null) {
       final fallbackPath = offlineSong['audioPath']?.toString();
-      if (fallbackPath == null || fallbackPath.isEmpty) return null;
-      final fallbackFile = File(fallbackPath);
-      if (await fallbackFile.exists()) {
-        song['audioPath'] = fallbackPath;
-        return fallbackPath;
+      if (fallbackPath != null && fallbackPath.isNotEmpty) {
+        final fallbackFile = File(fallbackPath);
+        if (await fallbackFile.exists()) {
+          song['audioPath'] = fallbackPath;
+          return fallbackPath;
+        }
       }
     }
 
+    logger.log('Offline audio file not found for: ${song['ytid']} ($audioPath)');
     return null;
   }
 
@@ -2104,13 +2366,8 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
           .setAudioSource(audioSource)
           .timeout(_songTransitionTimeout);
 
-      // Check once more after the async setAudioSource: a fast offline song
-      // could have loaded and started playing while we were buffering/setting up.
-      // If so, stop the source we just loaded and yield to the newer song.
-      if (_isStaleTransition(transitionId)) {
-        unawaited(audioPlayer.stop());
-        return false;
-      }
+      // The newer transition owns both players once this load is superseded.
+      if (_isStaleTransition(transitionId)) return false;
 
       final resolvedDuration = loadedDuration ?? audioPlayer.duration;
       if (resolvedDuration != null && _playerSourceMatchesCurrentSong()) {
@@ -2165,6 +2422,7 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
 
       return true;
     } catch (e, stackTrace) {
+      if (_isStaleTransition(transitionId)) return false;
       logger.log(
         'Error setting audio source',
         error: e,
@@ -2216,7 +2474,7 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
     bool playWhenReady = true,
     bool invalidateCache = false,
   }) async {
-    final songId = song['ytid']?.toString();
+    final songId = (song['ytid'] ?? song['id'])?.toString();
     if (songId == null || songId.isEmpty) return false;
 
     if (invalidateCache) await invalidateSongStreamCache(songId);
@@ -2299,6 +2557,10 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
         'isLive': true,
       };
 
+      // Radio cannot be shared in a Listen Together session.
+      if (isFollowingRemote) return false;
+
+      _abortCrossfade();
       _lastError = null;
       final wasPlayingBeforeSwap = audioPlayer.playing;
       if (audioPlayer.playing) {
@@ -2361,15 +2623,18 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
   Future<AudioSource?> buildAudioSource(
     Map song,
     String songUrl,
-    bool isOffline,
-  ) async {
+    bool isOffline, {
+    List<Map<String, int>>? preloadedSegments,
+  }) async {
     try {
       final tag = mapToMediaItem(song);
 
       if (isOffline) {
         final fileSource = AudioSource.file(songUrl, tag: tag);
 
-        if (sponsorBlockSupport.value) {
+        // Clipped sources report clip-relative positions, which would break
+        // position sync, so SponsorBlock is off during Listen Together.
+        if (sponsorBlockSupport.value && !_syncSessionActive) {
           return _applyOfflineSponsorBlock(fileSource, song['ytid']) ??
               fileSource;
         }
@@ -2388,8 +2653,14 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
         tag: tag,
       );
 
-      if (!sponsorBlockSupport.value) {
+      if (!sponsorBlockSupport.value || _syncSessionActive) {
         return audioSource;
+      }
+
+      if (preloadedSegments != null) {
+        return preloadedSegments.isEmpty
+            ? audioSource
+            : _buildSkippedAudioSource(audioSource, preloadedSegments);
       }
 
       final spbAudioSource = await checkIfSponsorBlockIsAvailable(
@@ -2492,6 +2763,7 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
 
   @override
   Future<void> skipToNext({bool playWhenReady = true}) async {
+    if (_forwardRemote('next')) return;
     try {
       if (_currentQueueIndex < _queueList.length - 1) {
         await _playFromQueue(
@@ -2523,6 +2795,7 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
 
   @override
   Future<void> skipToPrevious({bool playWhenReady = true}) async {
+    if (_forwardRemote('previous')) return;
     try {
       if (_currentQueueIndex > 0) {
         await _playFromQueue(
@@ -2556,6 +2829,7 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
         wasPlaying: audioPlayer.playing,
       );
       await audioPlayer.seek(Duration.zero);
+      _emitSyncEvent('seek');
       final song = currentSong;
       if (song != null) {
         listeningStatsService.startListeningSession(
@@ -2760,6 +3034,465 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // Listen Together
+  //
+  // The handler only provides hooks; ListenTogetherService owns the session.
+  // Outside a session every hook below is a no-op.
+  // ---------------------------------------------------------------------------
+
+  /// Sends a guest's action to the host. Returns true when it was forwarded,
+  /// in which case it must not also be applied locally.
+  bool _forwardRemote(String type, {Duration? position, Map? song}) {
+    final sink = _remoteCommandSink;
+    if (sink == null) return false;
+    try {
+      sink(type, position: position, song: song);
+    } catch (e, stackTrace) {
+      logger.log(
+        'Error forwarding remote command',
+        error: e,
+        stackTrace: stackTrace,
+      );
+    }
+    return true;
+  }
+
+  void _emitSyncEvent(String event) {
+    if (_syncSessionActive && !_syncEventsController.isClosed) {
+      _syncEventsController.add(event);
+    }
+  }
+
+  /// Starts session mode. Pass [followerCommandSink] for a guest.
+  Future<void> beginSyncSession({
+    RemoteCommandSink? followerCommandSink,
+    void Function()? onFollowerStopped,
+  }) async {
+    _abortCrossfade();
+    _syncSessionActive = true;
+    _remoteCommandSink = followerCommandSink;
+    _onRemoteFollowerStopped = onFollowerStopped;
+
+    // Host: a SponsorBlock-clipped song reports clip-relative positions, so
+    // reload it unclipped at the same point in the track.
+    if (followerCommandSink == null) {
+      final source = audioPlayer.audioSource;
+      // ignore: deprecated_member_use
+      if (source is ConcatenatingAudioSource || source is ClippingAudioSource) {
+        await _reloadCurrentSongUnclipped();
+      }
+    }
+  }
+
+  void endSyncSession() {
+    _syncSessionActive = false;
+    _remoteCommandSink = null;
+    _onRemoteFollowerStopped = null;
+  }
+
+  Future<void> _reloadCurrentSongUnclipped() async {
+    if (!_hasCurrentQueueIndex) return;
+    try {
+      final clip = audioPlayer.sequenceState.currentSource;
+      final clipStart = clip is ClippingAudioSource
+          ? clip.start ?? Duration.zero
+          : Duration.zero;
+      final absolutePosition = clipStart + audioPlayer.position;
+      final wasPlaying = audioPlayer.playing;
+      await _playFromQueue(
+        _currentQueueIndex,
+        playWhenReady: wasPlaying,
+        fromSync: true,
+      );
+      if (isCurrentSongLoaded) {
+        await audioPlayer.seek(absolutePosition);
+      }
+    } catch (e, stackTrace) {
+      logger.log(
+        'Error reloading song for Listen Together',
+        error: e,
+        stackTrace: stackTrace,
+      );
+    }
+  }
+
+  /// Guest: replaces the queue with the host's song and loads it paused.
+  /// Returns whether it is loaded and ready to be positioned.
+  Future<bool> syncLoadSong(Map song, {bool playWhenReady = false}) async {
+    final ytid = song['ytid']?.toString();
+    if (ytid == null || ytid.isEmpty) return false;
+    try {
+      _queueList.clear();
+      _originalQueueList.clear();
+      _originalQueueEntriesById.clear();
+      _queueList.add(_queueEntryIds.createSong(song));
+      _currentQueueIndex = 0;
+      _currentLoadingIndex = -1;
+      _currentLoadingTransitionId = -1;
+      _resetPreloadingState();
+      _updateQueueMediaItems();
+      await _playFromQueue(0, playWhenReady: playWhenReady, fromSync: true);
+      return isCurrentSongLoaded && currentSong?['ytid']?.toString() == ytid;
+    } catch (e, stackTrace) {
+      logger.log(
+        'Error loading Listen Together song',
+        error: e,
+        stackTrace: stackTrace,
+      );
+      return false;
+    }
+  }
+
+  /// Guest-side playback control used by the session (never forwarded).
+  Future<void> syncPlay() async {
+    // With nothing loaded, play() would start the last-played song and ask
+    // the host to switch to it. The session loads the host's song instead.
+    if (audioPlayer.audioSource == null) return;
+    await _playLocal();
+  }
+
+  Future<void> syncPause() => _pauseLocal();
+  Future<void> syncSeek(Duration position) => _seekLocal(position);
+
+  // ---------------------------------------------------------------------------
+  // Crossfade
+  //
+  // Flow: ~15s before the fade point the next queue song is loaded (paused,
+  // silent) into the standby player. At the fade point the standby player
+  // starts, becomes the active player (queue index, media item, stats and
+  // all streams switch to it at once) and the volumes are ramped. When the
+  // ramp ends the old player is stopped. If anything is not ready in time
+  // the crossfade is simply skipped and the normal song-completion path
+  // runs exactly as it does with crossfade off.
+  // ---------------------------------------------------------------------------
+
+  void _stopQuietly(AudioPlayer player) {
+    unawaited(
+      player.stop().catchError((Object e, StackTrace stackTrace) {
+        logger.log(
+          'Error stopping secondary player',
+          error: e,
+          stackTrace: stackTrace,
+        );
+      }),
+    );
+  }
+
+  void _onCrossfadeSettingChanged() {
+    if (crossfadeSeconds.value <= 0) {
+      _cancelCrossfadePreparation();
+    }
+  }
+
+  /// Ends a running crossfade and drops any pre-loaded next song.
+  void _abortCrossfade() {
+    _finishCrossfadeNow();
+    _cancelCrossfadePreparation();
+  }
+
+  /// Completes a running fade immediately: the incoming (now active) song
+  /// keeps playing at full volume and the outgoing song is stopped.
+  void _finishCrossfadeNow() {
+    _crossfadeRampTimer?.cancel();
+    _crossfadeRampTimer = null;
+    final outgoing = _fadingOutPlayer;
+    if (outgoing == null) return;
+    _fadingOutPlayer = null;
+    if (!identical(outgoing, audioPlayer)) {
+      _stopQuietly(outgoing);
+    }
+    unawaited(audioPlayer.setVolume(_userVolume.value));
+  }
+
+  void _cancelCrossfadePreparation() {
+    final hadWork = _crossfadePrepKey != null || _preparedCrossfade != null;
+    _crossfadeToken++;
+    _crossfadePrepKey = null;
+    _preparedCrossfade = null;
+    if (!hadWork) return;
+    final standby = _standbyPlayer;
+    if (!identical(standby, _fadingOutPlayer)) {
+      _stopQuietly(standby);
+    }
+  }
+
+  /// The queue entry a crossfade would move to right now, or null when a
+  /// crossfade must not happen (the normal transition is used instead).
+  _CrossfadeTarget? _crossfadeTarget() {
+    if (!audioPlayer.playing ||
+        audioPlayer.processingState != ProcessingState.ready) {
+      return null;
+    }
+    if (_currentLoadingIndex >= 0 || _completionEventPending) return null;
+    // Guests load each song fresh, so crossfade is off during Listen Together.
+    if (_syncSessionActive) return null;
+    if (sleepTimerEndOfSong || sleepTimerExpired) return null;
+    if (isAppBlockedByUpdate.value) return null;
+    if (repeatNotifier.value == AudioServiceRepeatMode.one) return null;
+    if (!_hasCurrentQueueIndex) return null;
+    // Also excludes radio streams, which are not part of the queue.
+    if (!_playerSourceMatchesCurrentSong()) return null;
+
+    final current = _queueList[_currentQueueIndex];
+    if (current['isLive'] == true) return null;
+
+    // SponsorBlock splits a song into clips: only fade on the last clip.
+    final sequenceState = audioPlayer.sequenceState;
+    final clipCount = sequenceState.sequence.length;
+    if (clipCount > 1 && sequenceState.currentIndex != clipCount - 1) {
+      return null;
+    }
+
+    final int nextIndex;
+    if (_currentQueueIndex < _queueList.length - 1) {
+      nextIndex = _currentQueueIndex + 1;
+    } else if (repeatNotifier.value == AudioServiceRepeatMode.all &&
+        _queueList.length > 1) {
+      nextIndex = 0;
+    } else {
+      return null;
+    }
+
+    final next = _queueList[nextIndex];
+    if (next['isLive'] == true) return null;
+    next['ytid'] ??= next['id'];
+    final nextYtid = next['ytid']?.toString();
+    if (nextYtid == null || nextYtid.isEmpty) return null;
+
+    final currentId = _queueEntryIds.ensureId(current);
+    final nextId = _queueEntryIds.ensureId(next);
+    return _CrossfadeTarget(
+      index: nextIndex,
+      key: '$currentId>$nextId',
+      song: next,
+    );
+  }
+
+  void _onCrossfadePositionTick(Duration position) {
+    try {
+      final fadeSeconds = crossfadeSeconds.value;
+      if (fadeSeconds <= 0 || !isMobilePlatform) {
+        if (_crossfadePrepKey != null) _cancelCrossfadePreparation();
+        return;
+      }
+      if (_fadingOutPlayer != null) return;
+
+      // A short pause or buffering hiccup is not a reason to throw away the
+      // pre-loaded next song: just wait for playback to resume.
+      final player = audioPlayer;
+      if (!player.playing || player.processingState != ProcessingState.ready) {
+        return;
+      }
+
+      final target = _crossfadeTarget();
+      final duration = audioPlayer.duration;
+      final fade = Duration(seconds: fadeSeconds);
+      if (target == null ||
+          duration == null ||
+          duration < fade + _crossfadeLeadTime) {
+        if (_crossfadePrepKey != null) _cancelCrossfadePreparation();
+        return;
+      }
+
+      final remaining = duration - position;
+
+      if (target.key != _crossfadePrepKey) {
+        if (remaining <= fade + _crossfadeLeadTime &&
+            remaining > _crossfadeMinPrepWindow) {
+          _startCrossfadePreparation(target);
+        }
+        return;
+      }
+
+      final prepared = _preparedCrossfade;
+      if (prepared == null || prepared.key != target.key) {
+        return; // Still loading, or loading failed: normal transition.
+      }
+
+      if (remaining <= fade) {
+        final effectiveFade = remaining < fade ? remaining : fade;
+        // Too late for an audible fade: let the normal completion run.
+        if (effectiveFade < _crossfadeMinFade) return;
+        _startCrossfade(prepared, target, effectiveFade);
+      }
+    } catch (e, stackTrace) {
+      logger.log('Crossfade tick error', error: e, stackTrace: stackTrace);
+    }
+  }
+
+  void _startCrossfadePreparation(_CrossfadeTarget target) {
+    _cancelCrossfadePreparation();
+    final token = ++_crossfadeToken;
+    _crossfadePrepKey = target.key;
+    unawaited(_prepareCrossfade(target, token));
+  }
+
+  Future<void> _prepareCrossfade(_CrossfadeTarget target, int token) async {
+    final standby = _standbyPlayer;
+    try {
+      final songData = cloneMap(target.song);
+      final playback = await _resolvePlaybackSource(songData);
+      if (token != _crossfadeToken) return;
+      if (playback == null) {
+        logger.log('Crossfade: no stream for ${songData['ytid']}, skipping');
+        return;
+      }
+
+      final source = await buildAudioSource(
+        songData,
+        playback.songUrl,
+        playback.isOffline,
+      );
+      if (token != _crossfadeToken) return;
+      if (source == null) {
+        logger.log('Crossfade: could not build source, skipping');
+        return;
+      }
+
+      // Everything below touches the standby player, so it only runs while
+      // this preparation is still current (checked synchronously above).
+      unawaited(standby.setVolume(0));
+      unawaited(standby.setSpeed(audioPlayer.speed));
+      unawaited(standby.setLoopMode(LoopMode.off));
+      unawaited(standby.setShuffleModeEnabled(shuffleNotifier.value));
+      await standby.setAudioSource(source).timeout(_crossfadeLoadTimeout);
+      if (token != _crossfadeToken) return;
+
+      final equalizer = _equalizers[standby];
+      if (equalizer != null && !_configuredEqualizers.contains(equalizer)) {
+        await _applySavedEqualizerSettings(equalizer);
+        if (token != _crossfadeToken) return;
+      }
+
+      _preparedCrossfade = _PreparedCrossfade(
+        token: token,
+        key: target.key,
+        player: standby,
+        song: songData,
+        songUrl: playback.songUrl,
+        isOffline: playback.isOffline,
+      );
+    } catch (e, stackTrace) {
+      if (token != _crossfadeToken) return; // Cancelled meanwhile.
+      // Keep _crossfadePrepKey so this pair is not retried; the normal
+      // transition handles it.
+      logger.log(
+        'Crossfade preparation failed, using normal transition',
+        error: e,
+        stackTrace: stackTrace,
+      );
+      _stopQuietly(standby);
+    }
+  }
+
+  void _startCrossfade(
+    _PreparedCrossfade prepared,
+    _CrossfadeTarget target,
+    Duration fade,
+  ) {
+    final incoming = prepared.player;
+    final outgoing = audioPlayer;
+    if (prepared.token != _crossfadeToken ||
+        identical(incoming, outgoing) ||
+        incoming.audioSource == null ||
+        incoming.processingState == ProcessingState.idle ||
+        incoming.processingState == ProcessingState.completed) {
+      logger.log('Crossfade: prepared player not usable, skipping');
+      _cancelCrossfadePreparation();
+      // Block retrying this pair; the normal transition takes over.
+      _crossfadePrepKey = target.key;
+      return;
+    }
+
+    // From here on everything runs synchronously, so no user action can
+    // interleave with the hand-over.
+    _crossfadeToken++;
+    _crossfadePrepKey = null;
+    _preparedCrossfade = null;
+    _fadingOutPlayer = outgoing;
+
+    // Close out the outgoing song like a normal completion would.
+    listeningStatsService.finishListeningSession(
+      countCurrentTick: true,
+      wasPlaying: true,
+    );
+    if (_hasCurrentQueueIndex) {
+      _addToHistory(_queueList[_currentQueueIndex]);
+    }
+
+    _songTransitionCounter++;
+    _lastError = null;
+    _currentQueueIndex = target.index;
+    mediaItem.add(_getMediaItemForQueue(_queueList[target.index]));
+
+    unawaited(incoming.setVolume(0));
+    unawaited(incoming.setSpeed(outgoing.speed));
+    _activePlayer.add(incoming);
+    unawaited(
+      incoming.play().catchError((Object e, StackTrace stackTrace) {
+        logger.log(
+          'Error starting crossfade playback',
+          error: e,
+          stackTrace: stackTrace,
+        );
+        _lastError = e.toString();
+      }),
+    );
+
+    final incomingDuration = incoming.duration;
+    if (incomingDuration != null && _playerSourceMatchesCurrentSong()) {
+      _updateCurrentMediaItemWithDuration(
+        incomingDuration,
+        preserveLongerKnown: _currentPlayerSourceIsClipped(),
+      );
+    }
+
+    final song = prepared.song;
+    listeningStatsService.startListeningSession(
+      song,
+      duration: incoming.duration,
+      isPlaying:
+          incoming.playing &&
+          incoming.processingState == ProcessingState.ready,
+    );
+    unawaited(updateRecentlyPlayed(song['ytid'], songFallback: song));
+    if (!prepared.isOffline) {
+      final cacheKey = 'song_${song['ytid']}_${audioQualitySetting.value}_url';
+      unawaited(addOrUpdateData<String>('cache', cacheKey, prepared.songUrl));
+    }
+
+    _consecutiveErrors = 0;
+    _updatePlaybackState(force: true);
+    _preloadUpcomingSongs();
+    _cleanupOldPreloadedSongs();
+    unawaited(_ensureEqualizerConfigured());
+
+    final stopwatch = Stopwatch()..start();
+    final fadeMs = fade.inMilliseconds;
+    _crossfadeRampTimer?.cancel();
+    _crossfadeRampTimer = Timer.periodic(_crossfadeTick, (timer) {
+      if (!identical(_fadingOutPlayer, outgoing)) {
+        timer.cancel();
+        return;
+      }
+      // Paused (by the user, a call, unplugged headphones...) or replaced:
+      // end the fade instead of resuming two songs later.
+      if (!identical(audioPlayer, incoming) || !incoming.playing) {
+        _finishCrossfadeNow();
+        return;
+      }
+      final t = (stopwatch.elapsedMilliseconds / fadeMs).clamp(0.0, 1.0);
+      final volume = _userVolume.value;
+      // Equal-power curve keeps loudness steady through the middle.
+      unawaited(incoming.setVolume(volume * math.sin(t * math.pi / 2)));
+      unawaited(outgoing.setVolume(volume * math.cos(t * math.pi / 2)));
+      if (t >= 1.0) {
+        _finishCrossfadeNow();
+      }
+    });
+  }
+
   @override
   Future<void> customAction(String name, [Map<String, dynamic>? extras]) async {
     try {
@@ -2804,6 +3537,38 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
 class _PlaybackSource {
   const _PlaybackSource({required this.songUrl, required this.isOffline});
 
+  final String songUrl;
+  final bool isOffline;
+}
+
+class _CrossfadeTarget {
+  const _CrossfadeTarget({
+    required this.index,
+    required this.key,
+    required this.song,
+  });
+
+  final int index;
+
+  /// "currentEntryId>nextEntryId": changes whenever the queue order does.
+  final String key;
+  final Map song;
+}
+
+class _PreparedCrossfade {
+  const _PreparedCrossfade({
+    required this.token,
+    required this.key,
+    required this.player,
+    required this.song,
+    required this.songUrl,
+    required this.isOffline,
+  });
+
+  final int token;
+  final String key;
+  final AudioPlayer player;
+  final Map song;
   final String songUrl;
   final bool isOffline;
 }

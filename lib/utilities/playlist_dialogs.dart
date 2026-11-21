@@ -2,7 +2,10 @@ import 'package:fluentui_system_icons/fluentui_system_icons.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:vybe/constants/app_constants.dart';
 import 'package:vybe/extensions/l10n.dart';
+import 'package:vybe/services/collaborative_playlist_service.dart';
 import 'package:vybe/services/playlists_manager.dart';
+import 'package:vybe/services/router_service.dart';
+import 'package:vybe/utilities/collaborative_playlist_dialogs.dart';
 import 'package:vybe/utilities/flutter_toast.dart';
 import 'package:vybe/utilities/playlist_image_picker.dart';
 import 'package:vybe/widgets/dialog_item.dart';
@@ -12,15 +15,18 @@ void showCreatePlaylistDialog(
   dynamic songToAdd,
   List<dynamic>? songsToAdd,
 }) {
+  final parentContext = context;
   var id = '';
   var customPlaylistName = '';
   var isYouTubeMode = songToAdd == null && songsToAdd == null;
+  var isCollaborative = false;
+  var isSubmitting = false;
   String? imageUrl;
   String? imageBase64;
 
   showDialog(
-    context: context,
-    builder: (BuildContext context) {
+    context: parentContext,
+    builder: (BuildContext dialogContext) {
       return StatefulBuilder(
         builder: (context, dialogSetState) {
           final colorScheme = Theme.of(context).colorScheme;
@@ -253,6 +259,34 @@ void showCreatePlaylistDialog(
                       ),
                       _imagePreview(),
                     ],
+                    const SizedBox(height: 12),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      value: isCollaborative,
+                      activeThumbColor: const Color(0xFF1DB954),
+                      title: const Text(
+                        'Collaborative Playlist',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      subtitle: const Text(
+                        'Invite friends to add & edit songs together',
+                        style: TextStyle(fontSize: 12),
+                      ),
+                      secondary: Icon(
+                        FluentIcons.people_team_20_filled,
+                        color: isCollaborative
+                            ? const Color(0xFF1DB954)
+                            : colorScheme.onSurfaceVariant,
+                      ),
+                      onChanged: (value) {
+                        dialogSetState(() {
+                          isCollaborative = value;
+                        });
+                      },
+                    ),
                   ],
                 ],
               ),
@@ -260,7 +294,7 @@ void showCreatePlaylistDialog(
             actionsAlignment: MainAxisAlignment.center,
             actions: <Widget>[
               OutlinedButton(
-                onPressed: () => Navigator.pop(context),
+                onPressed: isSubmitting ? null : () => Navigator.of(dialogContext).pop(),
                 style: OutlinedButton.styleFrom(
                   side: BorderSide(color: colorScheme.outline),
                   shape: RoundedRectangleBorder(
@@ -270,48 +304,151 @@ void showCreatePlaylistDialog(
                 child: Text(context.l10n!.cancel),
               ),
               FilledButton.icon(
-                onPressed: () async {
-                  if (isYouTubeMode && id.isNotEmpty) {
-                    final result = await addUserPlaylist(id, context);
-                    if (context.mounted) showToast(context, result);
-                    if (!context.mounted) return;
-                    Navigator.pop(context);
-                  } else if (!isYouTubeMode && customPlaylistName.isNotEmpty) {
-                    final (result, newPlaylistId) = createCustomPlaylist(
-                      customPlaylistName.trim(),
-                      imageBase64 ?? imageUrl,
-                      context,
-                    );
-                    if (songToAdd != null) {
-                      if (context.mounted) {
-                        final addResult = addSongInCustomPlaylist(
-                          context,
-                          newPlaylistId,
-                          songToAdd,
-                        );
-                        showToast(context, addResult);
-                      }
-                    } else if (songsToAdd != null && songsToAdd.isNotEmpty) {
-                      if (context.mounted) {
-                        final addResult = addSongsInCustomPlaylist(
-                          context,
-                          newPlaylistId,
-                          songsToAdd,
-                        );
-                        showToast(context, addResult);
-                      }
-                    } else {
-                      if (context.mounted) showToast(context, result);
-                    }
-                    if (!context.mounted) return;
-                    Navigator.pop(context);
-                  } else {
-                    showToast(
-                      context,
-                      '${context.l10n!.provideIdOrNameError}.',
-                    );
-                  }
-                },
+                onPressed: isSubmitting
+                    ? null
+                    : () async {
+                        if (isYouTubeMode && id.trim().isNotEmpty) {
+                          final ytId = id.trim();
+                          isSubmitting = true;
+                          dialogSetState(() {});
+                          Navigator.of(dialogContext).pop();
+
+                          final result = await addUserPlaylist(ytId, parentContext);
+                          showToast(NavigationManager().context, result);
+                        } else if (!isYouTubeMode &&
+                            customPlaylistName.trim().isNotEmpty) {
+                          final cleanName = customPlaylistName.trim();
+                          final alreadyExists = userCustomPlaylists.value.any(
+                            (p) =>
+                                (p['title'] ?? '')
+                                    .toString()
+                                    .trim()
+                                    .toLowerCase() ==
+                                cleanName.toLowerCase(),
+                          );
+                          if (alreadyExists) {
+                            showToast(
+                              dialogContext,
+                              'Playlist "$cleanName" already exists',
+                            );
+                            return;
+                          }
+
+                          isSubmitting = true;
+                          dialogSetState(() {});
+                          Navigator.of(dialogContext).pop();
+
+                          if (isCollaborative) {
+                            final collabResult =
+                                await CollaborativePlaylistService.instance
+                                    .createCollaborativePlaylist(
+                              cleanName,
+                              image: imageBase64 ?? imageUrl,
+                              context: parentContext,
+                            );
+                            final newPlaylistId =
+                                collabResult.playlistId ?? '';
+
+                            if (songToAdd != null &&
+                                newPlaylistId.isNotEmpty) {
+                              final addResult = addSongInCustomPlaylist(
+                                NavigationManager().context,
+                                newPlaylistId,
+                                songToAdd,
+                              );
+                              showToast(
+                                NavigationManager().context,
+                                addResult,
+                              );
+                            } else if (songsToAdd != null &&
+                                songsToAdd.isNotEmpty &&
+                                newPlaylistId.isNotEmpty) {
+                              final addResult = addSongsInCustomPlaylist(
+                                NavigationManager().context,
+                                newPlaylistId,
+                                songsToAdd,
+                              );
+                              showToast(
+                                NavigationManager().context,
+                                addResult,
+                              );
+                            } else {
+                              showToast(
+                                NavigationManager().context,
+                                collabResult.message,
+                              );
+                            }
+
+                            if (newPlaylistId.isNotEmpty) {
+                              final matchIndex =
+                                  userCustomPlaylists.value.indexWhere(
+                                (p) =>
+                                    (p['ytid'] ?? p['id'])?.toString() ==
+                                    newPlaylistId,
+                              );
+                              final inviteCode = collabResult.inviteCode ?? '';
+                              final created = matchIndex != -1
+                                  ? Map<String, dynamic>.from(
+                                      userCustomPlaylists.value[matchIndex])
+                                  : <String, dynamic>{
+                                      'ytid': newPlaylistId,
+                                      'title': cleanName,
+                                      'collabId': inviteCode,
+                                      'inviteCode': inviteCode,
+                                      'isCollaborative': true,
+                                    };
+                              created['collabId'] ??= inviteCode;
+                              created['inviteCode'] ??= inviteCode;
+
+                              if (parentContext.mounted) {
+                                showCollaborativePlaylistShareDialog(
+                                  parentContext,
+                                  created,
+                                );
+                              }
+                            }
+                          } else {
+                            final pair = createCustomPlaylist(
+                              cleanName,
+                              imageBase64 ?? imageUrl,
+                              parentContext,
+                            );
+                            final newPlaylistId = pair.$2;
+
+                            if (songToAdd != null &&
+                                newPlaylistId.isNotEmpty) {
+                              final addResult = addSongInCustomPlaylist(
+                                NavigationManager().context,
+                                newPlaylistId,
+                                songToAdd,
+                              );
+                              showToast(
+                                NavigationManager().context,
+                                addResult,
+                              );
+                            } else if (songsToAdd != null &&
+                                songsToAdd.isNotEmpty &&
+                                newPlaylistId.isNotEmpty) {
+                              final addResult = addSongsInCustomPlaylist(
+                                NavigationManager().context,
+                                newPlaylistId,
+                                songsToAdd,
+                              );
+                              showToast(
+                                NavigationManager().context,
+                                addResult,
+                              );
+                            } else {
+                              showToast(NavigationManager().context, pair.$1);
+                            }
+                          }
+                        } else {
+                          showToast(
+                            dialogContext,
+                            '${context.l10n!.provideIdOrNameError}.',
+                          );
+                        }
+                      },
                 icon: const Icon(FluentIcons.add_20_filled),
                 label: Text(context.l10n!.add),
               ),
@@ -328,10 +465,11 @@ void showAddToPlaylistDialog(
   dynamic song,
   List<dynamic>? songs,
 }) {
+  final parentContext = context;
   showDialog(
-    context: context,
-    builder: (BuildContext context) {
-      final colorScheme = Theme.of(context).colorScheme;
+    context: parentContext,
+    builder: (BuildContext dialogContext) {
+      final colorScheme = Theme.of(dialogContext).colorScheme;
       return AlertDialog(
         icon: Container(
           width: 56,
@@ -347,7 +485,7 @@ void showAddToPlaylistDialog(
           ),
         ),
         title: Text(
-          context.l10n!.addToPlaylist,
+          dialogContext.l10n!.addToPlaylist,
           style: TextStyle(
             color: colorScheme.onSurface,
             fontWeight: FontWeight.w600,
@@ -357,7 +495,7 @@ void showAddToPlaylistDialog(
         content: Container(
           width: double.maxFinite,
           constraints: BoxConstraints(
-            maxHeight: MediaQuery.sizeOf(context).height * 0.6,
+            maxHeight: MediaQuery.sizeOf(dialogContext).height * 0.6,
           ),
           child: Builder(
             builder: (context) {
@@ -381,7 +519,7 @@ void showAddToPlaylistDialog(
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 32),
                       child: Text(
-                        context.l10n!.noCustomPlaylists,
+                        dialogContext.l10n!.noCustomPlaylists,
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                           color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
@@ -449,27 +587,25 @@ void showAddToPlaylistDialog(
                                 iconBgColor: colorScheme.tertiaryContainer,
                                 label: p['title'] ?? '',
                                 onTap: () {
+                                  final targetId =
+                                      (p['ytid'] ?? p['id'])?.toString() ?? '';
+                                  Navigator.of(dialogContext).pop();
                                   if (song != null) {
-                                    showToast(
-                                      context,
-                                      addSongInCustomPlaylist(
-                                        context,
-                                        p['ytid'],
-                                        song,
-                                      ),
+                                    final res = addSongInCustomPlaylist(
+                                      parentContext,
+                                      targetId,
+                                      song,
                                     );
+                                    showToast(NavigationManager().context, res);
                                   } else if (songs != null &&
                                       songs.isNotEmpty) {
-                                    showToast(
-                                      context,
-                                      addSongsInCustomPlaylist(
-                                        context,
-                                        p['ytid'],
-                                        songs,
-                                      ),
+                                    final res = addSongsInCustomPlaylist(
+                                      parentContext,
+                                      targetId,
+                                      songs,
                                     );
+                                    showToast(NavigationManager().context, res);
                                   }
-                                  Navigator.pop(context);
                                 },
                               ),
                             ),
@@ -489,26 +625,25 @@ void showAddToPlaylistDialog(
                       iconBgColor: colorScheme.tertiaryContainer,
                       label: playlist['title'] ?? '',
                       onTap: () {
+                        final targetId =
+                            (playlist['ytid'] ?? playlist['id'])?.toString() ??
+                                '';
+                        Navigator.of(dialogContext).pop();
                         if (song != null) {
-                          showToast(
-                            context,
-                            addSongInCustomPlaylist(
-                              context,
-                              playlist['ytid'],
-                              song,
-                            ),
+                          final res = addSongInCustomPlaylist(
+                            parentContext,
+                            targetId,
+                            song,
                           );
+                          showToast(NavigationManager().context, res);
                         } else if (songs != null && songs.isNotEmpty) {
-                          showToast(
-                            context,
-                            addSongsInCustomPlaylist(
-                              context,
-                              playlist['ytid'],
-                              songs,
-                            ),
+                          final res = addSongsInCustomPlaylist(
+                            parentContext,
+                            targetId,
+                            songs,
                           );
+                          showToast(NavigationManager().context, res);
                         }
-                        Navigator.pop(context);
                       },
                     ),
                   );
@@ -520,20 +655,20 @@ void showAddToPlaylistDialog(
         actionsAlignment: MainAxisAlignment.end,
         actions: [
           TextButton(
-            child: Text(context.l10n!.cancel),
-            onPressed: () => Navigator.pop(context),
+            child: Text(dialogContext.l10n!.cancel),
+            onPressed: () => Navigator.of(dialogContext).pop(),
           ),
           FilledButton.icon(
             onPressed: () {
-              Navigator.pop(context);
+              Navigator.of(dialogContext).pop();
               showCreatePlaylistDialog(
-                context,
+                parentContext,
                 songToAdd: song,
                 songsToAdd: songs,
               );
             },
             icon: const Icon(FluentIcons.add_24_regular, size: 18),
-            label: Text(context.l10n!.addPlaylist),
+            label: Text(dialogContext.l10n!.addPlaylist),
           ),
         ],
       );

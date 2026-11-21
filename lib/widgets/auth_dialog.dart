@@ -17,16 +17,28 @@ class AuthDialog extends StatefulWidget {
   final bool initiallySignUp;
   final CloudSyncService? service;
 
+  static bool _isShowing = false;
+
   static Future<void> show(
     BuildContext context, {
     bool initiallySignUp = true,
-  }) {
-    return showDialog<void>(
-      context: context,
-      useSafeArea: false,
-      barrierDismissible: false,
-      builder: (_) => AuthDialog(initiallySignUp: initiallySignUp),
-    );
+    CloudSyncService? service,
+  }) async {
+    if (_isShowing) return;
+    _isShowing = true;
+    try {
+      await showDialog<void>(
+        context: context,
+        useSafeArea: false,
+        barrierDismissible: false,
+        builder: (_) => AuthDialog(
+          initiallySignUp: initiallySignUp,
+          service: service,
+        ),
+      );
+    } finally {
+      _isShowing = false;
+    }
   }
 
   @override
@@ -91,12 +103,6 @@ class _AuthDialogState extends State<AuthDialog> {
     if (_scrollController.hasClients) _scrollController.jumpTo(0);
   }
 
-  Future<void> _skip() async {
-    if (_isLoading) return;
-    await Hive.box('settings').put('auth_prompt_dismissed', true);
-    if (mounted) Navigator.of(context).pop();
-  }
-
   String? _validateEmail(String? value) {
     final email = value?.trim() ?? '';
     if (email.isEmpty) return 'Enter your email address.';
@@ -113,6 +119,7 @@ class _AuthDialogState extends State<AuthDialog> {
     if (!mounted) return;
     setState(() => _pendingAction = null);
     if (success) {
+      await Hive.box('settings').put('auth_prompt_dismissed', true);
       TextInput.finishAutofillContext();
       Navigator.of(context).pop();
       showToast(context, 'Signed in successfully! Restoring data...');
@@ -148,6 +155,7 @@ class _AuthDialogState extends State<AuthDialog> {
             'Check your inbox or spam folder, verify your email, then log in.';
       });
     } else if (success) {
+      await Hive.box('settings').put('auth_prompt_dismissed', true);
       TextInput.finishAutofillContext();
       Navigator.of(context).pop();
       showToast(context, 'Signed in successfully! Welcome back');
@@ -210,11 +218,29 @@ class _AuthDialogState extends State<AuthDialog> {
     child: CircularProgressIndicator(strokeWidth: 2.5, color: color),
   );
 
+  bool get _canClose {
+    try {
+      return !_isLoading && _service.currentUser.value != null;
+    } catch (_) {
+      return false;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final surface = Theme.of(context).colorScheme.surface;
-    return PopScope(
-      canPop: !_isLoading,
+    final canClose = _canClose;
+    return PopScope<Object?>(
+      canPop: canClose,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        if (_isLoading) return;
+        if (canClose) {
+          Navigator.of(context).pop();
+        } else {
+          SystemNavigator.pop();
+        }
+      },
       child: Dialog.fullscreen(
         backgroundColor: surface,
         child: Scaffold(
@@ -266,14 +292,17 @@ class _AuthDialogState extends State<AuthDialog> {
                                     ),
                                   ),
                                 ),
-                                TextButton(
-                                  onPressed: _isLoading ? null : _skip,
-                                  style: TextButton.styleFrom(
-                                    foregroundColor: _muted,
-                                    minimumSize: const Size(48, 48),
+                                if (canClose)
+                                  IconButton(
+                                    onPressed: _isLoading
+                                        ? null
+                                        : () => Navigator.of(context).pop(),
+                                    icon: const Icon(
+                                      Icons.close,
+                                      color: Colors.white70,
+                                    ),
+                                    tooltip: 'Close',
                                   ),
-                                  child: const Text('Skip for now'),
-                                ),
                               ],
                             ),
                             const SizedBox(height: 28),

@@ -6,9 +6,11 @@ import 'package:material_ui/material_ui.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:vybe/extensions/l10n.dart';
 import 'package:vybe/main.dart' show audioHandler;
+import 'package:vybe/services/listen_together_service.dart';
 import 'package:vybe/utilities/flutter_bottom_sheet.dart';
 import 'package:vybe/utilities/flutter_toast.dart';
 import 'package:vybe/widgets/queue_list_view.dart';
+import 'package:vybe/widgets/spotify_connect_sheet.dart';
 
 class SpotifyBottomRow extends StatelessWidget {
   const SpotifyBottomRow({super.key, required this.metadata});
@@ -60,10 +62,34 @@ class SpotifyBottomRow extends StatelessWidget {
             onPressed: () =>
                 showCustomBottomSheet(context, const _VolumePanel()),
           ),
-          // Right actions: Share & Queue
+          // Right actions: Listen Together, Share & Queue
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
+              ValueListenableBuilder<ListenTogetherSession?>(
+                valueListenable: ListenTogetherService.instance.session,
+                builder: (context, session, _) => IconButton(
+                  iconSize: iconSize,
+                  icon: Icon(
+                    session == null
+                        ? FluentIcons.phone_desktop_24_regular
+                        : FluentIcons.phone_desktop_24_filled,
+                    color: session == null
+                        ? iconColor
+                        : const Color(0xFF1DB954),
+                  ),
+                  tooltip: session == null
+                      ? 'Connect & Jam'
+                      : 'In Jam: ${session.code}',
+                  style: IconButton.styleFrom(
+                    backgroundColor: Colors.transparent,
+                    splashFactory: NoSplash.splashFactory,
+                    padding: const EdgeInsets.all(8),
+                  ),
+                  onPressed: () => showSpotifyConnectSheet(context),
+                ),
+              ),
+              const SizedBox(width: 4),
               IconButton(
                 iconSize: iconSize,
                 icon: const Icon(

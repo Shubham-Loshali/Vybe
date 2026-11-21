@@ -6,12 +6,14 @@ import 'package:vybe/constants/app_constants.dart';
 import 'package:vybe/extensions/l10n.dart';
 import 'package:vybe/main.dart' show logger;
 import 'package:vybe/services/common_services.dart';
+import 'package:vybe/services/followed_artists_service.dart';
 import 'package:vybe/services/playlist_download_service.dart';
 import 'package:vybe/services/playlists_manager.dart';
 import 'package:vybe/services/router_service.dart';
 import 'package:vybe/services/settings_manager.dart';
 import 'package:vybe/utilities/app_utils.dart';
 import 'package:vybe/utilities/async_loader.dart';
+import 'package:vybe/utilities/collaborative_playlist_dialogs.dart';
 import 'package:vybe/utilities/flutter_toast.dart';
 import 'package:vybe/utilities/offline_playlist_dialogs.dart';
 import 'package:vybe/utilities/playlist_dialogs.dart';
@@ -112,7 +114,7 @@ class _LibraryPageState extends State<LibraryPage> {
           if (!offlineMode.value)
             IconButton(
               icon: const Icon(FluentIcons.add_24_regular),
-              onPressed: () => showCreatePlaylistDialog(context),
+              onPressed: () => _showAddMenu(context),
             ),
           const SizedBox(width: 4),
         ],
@@ -128,6 +130,7 @@ class _LibraryPageState extends State<LibraryPage> {
           onlinePlaylists,
           userPlaylists,
           userOfflineSongs,
+          FollowedArtistsService.instance.followedArtists,
         ]),
         builder: (context, _) {
           return Padding(
@@ -234,27 +237,14 @@ class _LibraryPageState extends State<LibraryPage> {
                 icon: FluentIcons.library_24_filled,
                 actionButton: isOffline
                     ? null
-                    : Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton(
-                            padding: const EdgeInsets.symmetric(horizontal: 2),
-                            onPressed: _showCreateFolderDialog,
-                            icon: Icon(
-                              FluentIcons.folder_add_24_regular,
-                              color: colorScheme.onSurfaceVariant,
-                            ),
-                            tooltip: context.l10n!.createFolder,
-                          ),
-                          IconButton(
-                            padding: const EdgeInsets.symmetric(horizontal: 2),
-                            onPressed: () => showCreatePlaylistDialog(context),
-                            icon: Icon(
-                              FluentIcons.add_24_regular,
-                              color: colorScheme.onSurfaceVariant,
-                            ),
-                          ),
-                        ],
+                    : IconButton(
+                        padding: const EdgeInsets.symmetric(horizontal: 2),
+                        onPressed: _showCreateFolderDialog,
+                        icon: Icon(
+                          FluentIcons.folder_add_24_regular,
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                        tooltip: context.l10n!.createFolder,
                       ),
               ),
               if (!isOffline) ...[
@@ -331,14 +321,6 @@ class _LibraryPageState extends State<LibraryPage> {
               SectionHeader(
                 title: context.l10n!.addedPlaylists,
                 icon: FluentIcons.add_circle_24_filled,
-                actionButton: IconButton(
-                  padding: const EdgeInsets.only(right: 5),
-                  onPressed: () => showCreatePlaylistDialog(context),
-                  icon: Icon(
-                    FluentIcons.add_24_regular,
-                    color: colorScheme.onSurfaceVariant,
-                  ),
-                ),
               ),
               AsyncLoader<List<dynamic>>(
                 future: getUserPlaylistsNotInFolders(),
@@ -378,13 +360,55 @@ class _LibraryPageState extends State<LibraryPage> {
   }
 
   List<Widget> _buildLikedArtistsSlivers() {
-    final likedArtists = getLikedArtistItems(offlineOnly: offlineMode.value);
-    if (likedArtists.isEmpty) return [];
+    final likedArtists = FollowedArtistsService.instance.getFollowedArtists(
+      offlineOnly: offlineMode.value,
+    );
+    if (likedArtists.isEmpty) {
+      if (_filter == 2) {
+        return [
+          SliverFillRemaining(
+            hasScrollBody: false,
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(32),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      FluentIcons.person_star_32_regular,
+                      size: 64,
+                      color: Theme.of(context).colorScheme.outline,
+                    ),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'No followed artists yet',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Follow your favorite artists to easily find them here',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ];
+      }
+      return [];
+    }
     return [
-      SliverToBoxAdapter(
+      const SliverToBoxAdapter(
         child: SectionHeader(
-          title: context.l10n!.artist,
-          icon: FluentIcons.person_24_filled,
+          title: 'Followed Artists',
+          icon: FluentIcons.person_star_24_filled,
         ),
       ),
       _buildSliverPlaylistList(likedArtists),
@@ -403,7 +427,8 @@ class _LibraryPageState extends State<LibraryPage> {
         itemCount: playlists.length,
         itemBuilder: (BuildContext context, index) {
           final playlist = playlists[index];
-          final isArtist = playlist['source']?.toString() == 'youtube-artist';
+          final isArtist = playlist['source']?.toString() == 'youtube-artist' ||
+              playlist['isArtist'] == true;
           final borderRadius = getItemBorderRadius(
             index,
             playlists.length,
@@ -426,14 +451,15 @@ class _LibraryPageState extends State<LibraryPage> {
                     isOfflinePlaylists
                 ? playlist
                 : null,
-            onDelete:
-                playlist['source'] == 'user-created' ||
+            onDelete: isArtist
+                ? () => _showUnfollowArtistDialog(playlist)
+                : (playlist['source'] == 'user-created' ||
                     playlist['source'] == 'user-youtube' ||
                     isOfflinePlaylists
                 ? () => isOfflinePlaylists
                       ? _showRemoveOfflinePlaylistDialog(playlist)
                       : _showRemovePlaylistDialog(playlist)
-                : null,
+                : null),
             borderRadius: borderRadius,
           );
         },
@@ -631,4 +657,91 @@ class _LibraryPageState extends State<LibraryPage> {
       );
     },
   );
+
+  void _showUnfollowArtistDialog(Map artist) {
+    final artistId = artist['ytid']?.toString() ?? '';
+    final name = artist['title']?.toString() ?? 'this artist';
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return ConfirmationDialog(
+          confirmationMessage: 'Unfollow $name?',
+          submitMessage: 'Unfollow',
+          onCancel: () => Navigator.of(context).pop(),
+          onSubmit: () {
+            Navigator.of(context).pop();
+            FollowedArtistsService.instance.unfollowArtist(artistId);
+            showToast(context, 'Unfollowed $name');
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _showAddMenu(BuildContext context) async {
+    final colorScheme = Theme.of(context).colorScheme;
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      useRootNavigator: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                margin: const EdgeInsets.only(top: 8, bottom: 8),
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: colorScheme.outlineVariant,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              ListTile(
+                leading: const Icon(FluentIcons.music_note_2_24_regular),
+                title: Text(this.context.l10n!.addPlaylist),
+                subtitle: const Text('Create a new playlist or import from YouTube'),
+                onTap: () => Navigator.of(sheetContext).pop('add_playlist'),
+              ),
+              ListTile(
+                leading: const Icon(
+                  FluentIcons.people_team_24_regular,
+                  color: Color(0xFF1DB954),
+                ),
+                title: const Text('Join Collaborative Playlist'),
+                subtitle: const Text(
+                  'Enter invite code or link to collaborate with friends',
+                ),
+                onTap: () => Navigator.of(sheetContext).pop('join_collab'),
+              ),
+              ListTile(
+                leading: const Icon(FluentIcons.folder_add_24_regular),
+                title: Text(this.context.l10n!.createFolder),
+                subtitle: const Text('Organize your playlists into folders'),
+                onTap: () => Navigator.of(sheetContext).pop('create_folder'),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (!context.mounted || action == null) return;
+
+    switch (action) {
+      case 'add_playlist':
+        showCreatePlaylistDialog(context);
+        break;
+      case 'join_collab':
+        await showJoinCollaborativePlaylistDialog(context);
+        break;
+      case 'create_folder':
+        _showCreateFolderDialog();
+        break;
+    }
+  }
 }

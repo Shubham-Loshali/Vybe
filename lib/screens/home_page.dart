@@ -1,7 +1,8 @@
+import 'dart:async';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:fluentui_system_icons/fluentui_system_icons.dart';
 import 'package:go_router/go_router.dart';
-import 'package:hive_ce/hive.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:vybe/constants/app_constants.dart';
 import 'package:vybe/extensions/l10n.dart';
@@ -11,6 +12,7 @@ import 'package:vybe/services/common_services.dart';
 import 'package:vybe/services/listening_stats_service.dart';
 import 'package:vybe/services/playlist_download_service.dart';
 import 'package:vybe/services/playlists_manager.dart';
+import 'package:vybe/services/recommendation_service.dart';
 import 'package:vybe/services/router_service.dart';
 import 'package:vybe/services/settings_manager.dart';
 import 'package:vybe/utilities/account_name.dart';
@@ -34,41 +36,73 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  static bool _hasPromptedAuthThisSession = false;
-  late final Future<List> _suggestedPlaylistsFuture;
+  late Future<List> _suggestedPlaylistsFuture;
+  late Future<List> _trendingArtistsFuture;
   late Future<List> _recommendedSongsFuture;
+  Timer? _recentlyPlayedDebounce;
 
   @override
   void initState() {
     super.initState();
-    _suggestedPlaylistsFuture = getPlaylists(
-      playlistsNum: recommendedCubesNumber,
-    );
-    _recommendedSongsFuture = getRecommendedSongs();
-    externalRecommendations.addListener(_refreshRecommendedSongs);
+    _suggestedPlaylistsFuture =
+        RecommendationService.instance.getSuggestedPlaylists();
+    _trendingArtistsFuture =
+        RecommendationService.instance.getSuggestedArtists();
+    _recommendedSongsFuture =
+        RecommendationService.instance.getRecommendedSongs();
+    externalRecommendations.addListener(_refreshAllRecommendations);
+    userRecentlyPlayed.addListener(_onRecentlyPlayedChanged);
+    CloudSyncService.instance.currentUser.addListener(_onAuthChanged);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      if (_hasPromptedAuthThisSession) return;
-      final isDismissed =
-          Hive.box('settings').get('auth_prompt_dismissed', defaultValue: false);
-      if (CloudSyncService.instance.currentUser.value == null && !isDismissed) {
-        _hasPromptedAuthThisSession = true;
+      if (CloudSyncService.instance.isFirebaseConfigured &&
+          CloudSyncService.instance.currentUser.value == null) {
+        final existing = FirebaseAuth.instance.currentUser;
+        if (existing != null) {
+          CloudSyncService.instance.currentUser.value = existing;
+        }
+      }
+      if (CloudSyncService.instance.currentUser.value == null) {
         AuthDialog.show(context);
       }
     });
   }
 
+  void _onRecentlyPlayedChanged() {
+    if (!mounted) return;
+    _recentlyPlayedDebounce?.cancel();
+    _recentlyPlayedDebounce = Timer(const Duration(seconds: 2), () {
+      if (!mounted) return;
+      _refreshAllRecommendations();
+    });
+  }
+
+  void _onAuthChanged() {
+    if (!mounted) return;
+    if (CloudSyncService.instance.currentUser.value == null) {
+      AuthDialog.show(context);
+    }
+  }
+
   @override
   void dispose() {
-    externalRecommendations.removeListener(_refreshRecommendedSongs);
+    _recentlyPlayedDebounce?.cancel();
+    userRecentlyPlayed.removeListener(_onRecentlyPlayedChanged);
+    CloudSyncService.instance.currentUser.removeListener(_onAuthChanged);
+    externalRecommendations.removeListener(_refreshAllRecommendations);
     super.dispose();
   }
 
-  void _refreshRecommendedSongs() {
+  void _refreshAllRecommendations() {
     if (!mounted) return;
     setState(() {
-      _recommendedSongsFuture = getRecommendedSongs();
+      _suggestedPlaylistsFuture =
+          RecommendationService.instance.getSuggestedPlaylists(forceRefresh: true);
+      _trendingArtistsFuture =
+          RecommendationService.instance.getSuggestedArtists(forceRefresh: true);
+      _recommendedSongsFuture =
+          RecommendationService.instance.getRecommendedSongs();
     });
   }
 
@@ -146,6 +180,7 @@ class _HomePageState extends State<HomePage> {
           children: [
             if (_filter != 2) _buildQuickAccessGrid(),
             if (_filter != 2) _buildSuggestedPlaylists(),
+            if (_filter != 2) _buildTrendingArtists(),
             if (_filter == 0) _buildCurrentMonthRecapSection(),
             if (_filter != 1) _buildRecommendedSongsSection(),
             const MiniPlayerBottomSpace(),
@@ -212,8 +247,55 @@ class _HomePageState extends State<HomePage> {
                   final playlist = playlists[index];
                   return ShelfCard(
                     playlist: playlist,
-                    onTap: () =>
-                        context.push('/home/playlist/${playlist['ytid']}'),
+                    onTap: () {
+                      final id = Uri.encodeComponent(
+                        playlist['ytid'].toString().trim(),
+                      );
+                      if (isArtistPlaylist(playlist)) {
+                        context.push('/home/artist/$id', extra: playlist);
+                      } else {
+                        context.push('/home/playlist/$id');
+                      }
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildTrendingArtists() {
+    return AsyncLoader<List<dynamic>>(
+      future: _trendingArtistsFuture,
+      builder: (context, artists) {
+        if (artists.isEmpty) return const SizedBox.shrink();
+
+        const cardSize = 120.0;
+        final itemCount = artists.length.clamp(0, 15);
+
+        return Column(
+          children: [
+            SectionHeader(title: context.l10n!.suggestedArtists),
+            SizedBox(
+              height: cardSize + 56,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: itemCount,
+                separatorBuilder: (_, __) => const SizedBox(width: 12),
+                itemBuilder: (context, index) {
+                  final artist = artists[index];
+                  return ShelfCard(
+                    playlist: artist,
+                    size: cardSize,
+                    onTap: () {
+                      final id = Uri.encodeComponent(
+                        artist['ytid'].toString().trim(),
+                      );
+                      context.push('/home/artist/$id', extra: artist);
+                    },
                   );
                 },
               ),

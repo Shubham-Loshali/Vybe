@@ -73,3 +73,50 @@ test("does not expose upstream errors or accept a different playlist", async () 
   );
   assert.equal(mismatch.status, 502);
 });
+
+test("fetches all pages of large playlists via Spotify Web API", async () => {
+  const spotifyEnv = {
+    SPOTIFY_CLIENT_ID: "client-id",
+    SPOTIFY_CLIENT_SECRET: "client-secret",
+  };
+  const response = await exportSpotifyPlaylist(request, spotifyEnv, context, async (url) => {
+    const urlStr = url.toString();
+    if (urlStr.includes("/api/token")) {
+      return Response.json({ access_token: "mock-token" });
+    }
+    if (urlStr.includes("api.spotify.com/v1/playlists") && !urlStr.includes("offset=")) {
+      return Response.json({
+        name: "Mega 250 Playlist",
+        tracks: {
+          total: 250,
+          items: Array.from({ length: 100 }, (_, i) => ({
+            track: { name: `Track ${i + 1}`, artists: [{ name: `Artist ${i + 1}` }] },
+          })),
+        },
+      });
+    }
+    if (urlStr.includes("offset=100")) {
+      return Response.json({
+        items: Array.from({ length: 100 }, (_, i) => ({
+          track: { name: `Track ${i + 101}`, artists: [{ name: `Artist ${i + 101}` }] },
+        })),
+      });
+    }
+    if (urlStr.includes("offset=200")) {
+      return Response.json({
+        items: Array.from({ length: 50 }, (_, i) => ({
+          track: { name: `Track ${i + 201}`, artists: [{ name: `Artist ${i + 201}` }] },
+        })),
+      });
+    }
+    return new Response("Not found", { status: 404 });
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("X-Playlist-Complete"), "true");
+  assert.equal(response.headers.get("X-Playlist-Total"), "250");
+  const text = await response.text();
+  assert.match(text, /Track 1/);
+  assert.match(text, /Track 150/);
+  assert.match(text, /Track 250/);
+});

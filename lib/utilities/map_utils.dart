@@ -9,7 +9,10 @@ List<Map<String, dynamic>> cloneMaps(Iterable<Map> sources) {
 }
 
 String? songYtid(Map song) {
-  final ytid = song['ytid']?.toString();
+  var ytid = song['ytid']?.toString().trim();
+  if (ytid == null || ytid.isEmpty) {
+    ytid = song['id']?.toString().trim();
+  }
   return ytid == null || ytid.isEmpty ? null : ytid;
 }
 

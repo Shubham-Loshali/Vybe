@@ -5,11 +5,14 @@ import 'package:rxdart/rxdart.dart';
 import 'package:vybe/main.dart';
 import 'package:vybe/models/full_player_state.dart';
 import 'package:vybe/models/position_data.dart';
+import 'package:vybe/screens/listen_together_page.dart';
 import 'package:vybe/screens/now_playing_page.dart';
+import 'package:vybe/services/listen_together_service.dart';
 import 'package:vybe/utilities/artwork_color_extractor.dart';
 import 'package:vybe/utilities/player_colors.dart';
 import 'package:vybe/widgets/marquee.dart';
 import 'package:vybe/widgets/song_artwork.dart';
+import 'package:vybe/widgets/spotify_connect_sheet.dart';
 
 final Stream<FullPlayerState> _fullPlayerStateStream =
     Rx.combineLatest3(
@@ -173,81 +176,98 @@ class _MiniPlayerBodyState extends State<_MiniPlayerBody>
                   totalDuration.inMilliseconds)
               .clamp(0.0, 1.0);
 
-    return AnimatedBuilder(
-      animation: _scaleAnimation,
-      builder: (context, child) {
-        return Transform.scale(
-          scale: _scaleAnimation.value,
-          child: GestureDetector(
-            onTapDown: (_) => _animationController.forward(),
-            onTapUp: (_) => _animationController.reverse(),
-            onTapCancel: () => _animationController.reverse(),
-            onVerticalDragUpdate: _handleVerticalDrag,
-            onTap: _navigateToNowPlaying,
-            child: Container(
-              height: MiniPlayer.playerHeight,
-              decoration: BoxDecoration(
-                color: miniPlayerSurface(
-                  _tint ?? colorScheme.surfaceContainerHigh,
-                ),
-                borderRadius: BorderRadius.circular(MiniPlayer._borderRadius),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.35),
-                    blurRadius: 10,
-                    offset: const Offset(0, 3),
-                  ),
-                ],
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(MiniPlayer._borderRadius),
-                child: Stack(
-                  alignment: Alignment.bottomCenter,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 10),
-                      child: Row(
-                        children: [
-                          _ArtworkWidget(metadata: metadata),
-                          Expanded(
-                            child: KeyedSubtree(
-                              key: ValueKey(
-                                '${metadata.extras?['ytid']}|${metadata.title}|${metadata.artist}',
+    return ValueListenableBuilder<ListenTogetherSession?>(
+      valueListenable: ListenTogetherService.instance.session,
+      builder: (context, session, _) {
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (session != null) ...[
+              _SpotifyJamPill(session: session),
+              const SizedBox(height: 4),
+            ],
+            AnimatedBuilder(
+              animation: _scaleAnimation,
+              builder: (context, child) {
+                return Transform.scale(
+                  scale: _scaleAnimation.value,
+                  child: GestureDetector(
+                    onTapDown: (_) => _animationController.forward(),
+                    onTapUp: (_) => _animationController.reverse(),
+                    onTapCancel: () => _animationController.reverse(),
+                    onVerticalDragUpdate: _handleVerticalDrag,
+                    onTap: _navigateToNowPlaying,
+                    child: Container(
+                      height: MiniPlayer.playerHeight,
+                      decoration: BoxDecoration(
+                        color: session != null
+                            ? const Color(0xFF430D34)
+                            : miniPlayerSurface(
+                                _tint ?? colorScheme.surfaceContainerHigh,
                               ),
-                              child: _MetadataWidget(
-                                title: metadata.title,
-                                artist: metadata.artist,
-                                colorScheme: colorScheme,
-                              ),
-                            ),
-                          ),
-                          _ControlsWidget(
-                            colorScheme: colorScheme,
-                            playbackState: state.playbackState,
-                            hasNext: widget.hasNext,
-                            progress: progress,
+                        borderRadius: BorderRadius.circular(MiniPlayer._borderRadius),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.35),
+                            blurRadius: 10,
+                            offset: const Offset(0, 3),
                           ),
                         ],
                       ),
-                    ),
-                    Positioned(
-                      left: 0,
-                      right: 0,
-                      bottom: 0,
-                      child: LinearProgressIndicator(
-                        value: progress,
-                        minHeight: 2.5,
-                        backgroundColor: Colors.white.withValues(alpha: 0.2),
-                        valueColor: const AlwaysStoppedAnimation<Color>(
-                          Colors.white,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(MiniPlayer._borderRadius),
+                        child: Stack(
+                          alignment: Alignment.bottomCenter,
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 10),
+                              child: Row(
+                                children: [
+                                  _ArtworkWidget(metadata: metadata),
+                                  Expanded(
+                                    child: KeyedSubtree(
+                                      key: ValueKey(
+                                        '${metadata.extras?['ytid']}|${metadata.title}|${metadata.artist}',
+                                      ),
+                                      child: _MetadataWidget(
+                                        title: metadata.title,
+                                        artist: metadata.artist,
+                                        colorScheme: colorScheme,
+                                      ),
+                                    ),
+                                  ),
+                                  _ControlsWidget(
+                                    colorScheme: colorScheme,
+                                    playbackState: state.playbackState,
+                                    hasNext: widget.hasNext,
+                                    progress: progress,
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Positioned(
+                              left: 0,
+                              right: 0,
+                              bottom: 0,
+                              child: LinearProgressIndicator(
+                                value: progress,
+                                minHeight: 2.5,
+                                backgroundColor: Colors.white.withValues(alpha: 0.2),
+                                valueColor: const AlwaysStoppedAnimation<Color>(
+                                  Colors.white,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
-                  ],
-                ),
-              ),
+                  ),
+                );
+              },
             ),
-          ),
+          ],
         );
       },
     );
@@ -360,6 +380,24 @@ class _ControlsWidget extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
+        ValueListenableBuilder<ListenTogetherSession?>(
+          valueListenable: ListenTogetherService.instance.session,
+          builder: (context, session, _) {
+            final inSession = session != null;
+            return IconButton(
+              tooltip: inSession ? 'In Jam: ${session.code}' : 'Connect & Jam',
+              onPressed: () => showSpotifyConnectSheet(context),
+              splashColor: Colors.transparent,
+              highlightColor: Colors.transparent,
+              icon: Icon(
+                FluentIcons.phone_desktop_24_regular,
+                color: inSession ? const Color(0xFF1DB954) : Colors.white70,
+                size: 20,
+              ),
+              visualDensity: VisualDensity.compact,
+            );
+          },
+        ),
         _CircularPlayButton(
           colorScheme: colorScheme,
           playbackState: playbackState,
@@ -379,6 +417,74 @@ class _ControlsWidget extends StatelessWidget {
           ),
         ],
       ],
+    );
+  }
+}
+
+class _SpotifyJamPill extends StatelessWidget {
+  const _SpotifyJamPill({
+    required this.session,
+  });
+
+  final ListenTogetherSession session;
+
+  @override
+  Widget build(BuildContext context) {
+    final host = session.hostName.trim();
+    final initial = host.isNotEmpty ? host.characters.first.toUpperCase() : 'S';
+
+    return GestureDetector(
+      onTap: () => openListenTogetherPage(context),
+      child: Container(
+        height: 36,
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        decoration: BoxDecoration(
+          color: const Color(0xFF5D1248),
+          borderRadius: BorderRadius.circular(MiniPlayer._borderRadius),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.3),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                '${session.hostName}’s Jam',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: -0.2,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Container(
+              width: 22,
+              height: 22,
+              decoration: const BoxDecoration(
+                color: Color(0xFFFFB4D6),
+                shape: BoxShape.circle,
+              ),
+              alignment: Alignment.center,
+              child: Text(
+                initial,
+                style: const TextStyle(
+                  color: Color(0xFF4C0838),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

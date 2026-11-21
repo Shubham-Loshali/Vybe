@@ -7,6 +7,7 @@ import 'package:vybe/constants/app_constants.dart';
 import 'package:vybe/extensions/l10n.dart';
 import 'package:vybe/main.dart';
 import 'package:vybe/services/artist_service.dart';
+import 'package:vybe/services/collaborative_playlist_service.dart';
 import 'package:vybe/services/common_services.dart';
 import 'package:vybe/services/data_manager.dart';
 import 'package:vybe/services/playlist_download_service.dart';
@@ -15,6 +16,7 @@ import 'package:vybe/services/playlists_manager.dart';
 import 'package:vybe/services/settings_manager.dart';
 import 'package:vybe/utilities/app_utils.dart';
 import 'package:vybe/utilities/async_loader.dart';
+import 'package:vybe/utilities/collaborative_playlist_dialogs.dart';
 import 'package:vybe/utilities/flutter_toast.dart';
 import 'package:vybe/utilities/playlist_utils.dart';
 import 'package:vybe/utilities/song_filtering.dart';
@@ -101,15 +103,33 @@ class _PlaylistPageState extends State<PlaylistPage> {
     super.initState();
     _searchController = TextEditingController();
     _searchFocusNode = FocusNode();
+    userCustomPlaylists.addListener(_onCustomPlaylistsChanged);
     _initializePlaylist();
   }
 
   @override
   void dispose() {
+    userCustomPlaylists.removeListener(_onCustomPlaylistsChanged);
     _searchController.dispose();
     _searchFocusNode.dispose();
     _searchQueryNotifier.dispose();
     super.dispose();
+  }
+
+  void _onCustomPlaylistsChanged() {
+    final resolvedId = _resolvedPlaylistId;
+    if (resolvedId == null || !mounted) return;
+    for (final p in userCustomPlaylists.value) {
+      if ((p['ytid'] ?? p['id'])?.toString() == resolvedId) {
+        if (mounted) {
+          setState(() {
+            _playlist = p;
+            _adoptPlaylist(p);
+          });
+        }
+        break;
+      }
+    }
   }
 
   Future<void> _initializePlaylist() async {
@@ -297,6 +317,7 @@ class _PlaylistPageState extends State<PlaylistPage> {
   Widget _buildHeaderSection() {
     final songsLength = (_playlist['list'] as List? ?? const []).length;
     final isUserCreated = _playlist['source'] == 'user-created';
+    final isCollaborative = _playlist['isCollaborative'] == true;
     final secondaryActions = <Widget>[
       if (widget.playlistId != null && !isUserCreated && !offlineMode.value)
         PlaylistLikeButton(
@@ -308,7 +329,47 @@ class _PlaylistPageState extends State<PlaylistPage> {
         PlaylistAddToPlaylistButton(resolvePlaylist: () async => _playlist),
         if (!isUserCreated) _buildSyncButton(),
       ],
-      if (isUserCreated) ...[_buildShareButton(), _buildEditButton()],
+      if (isUserCreated) ...[
+        if (isCollaborative)
+          IconButton.filledTonal(
+            icon: const Icon(FluentIcons.people_team_24_filled),
+            iconSize: 24,
+            color: const Color(0xFF1DB954),
+            onPressed: () =>
+                showCollaborativePlaylistShareDialog(context, _playlist),
+            tooltip: 'Collaborator Settings & Invite',
+          )
+        else
+          IconButton.filledTonal(
+            icon: const Icon(FluentIcons.person_add_24_regular),
+            iconSize: 24,
+            onPressed: () async {
+              final playlistId = _resolvedPlaylistId;
+              if (playlistId != null) {
+                final res = await CollaborativePlaylistService.instance
+                    .makePlaylistCollaborative(playlistId);
+                if (res.success && mounted) {
+                  showToast(context, 'Playlist is now collaborative!');
+                  for (final p in userCustomPlaylists.value) {
+                    if ((p['ytid'] ?? p['id'])?.toString() == playlistId) {
+                      setState(() {
+                        _playlist = p;
+                      });
+                      if (mounted) {
+                        showCollaborativePlaylistShareDialog(
+                            context, _playlist);
+                      }
+                      break;
+                    }
+                  }
+                }
+              }
+            },
+            tooltip: 'Make Collaborative',
+          ),
+        _buildShareButton(),
+        _buildEditButton(),
+      ],
     ];
 
     return Column(
@@ -320,6 +381,53 @@ class _PlaylistPageState extends State<PlaylistPage> {
           isArtist: widget.isArtist,
           showTitle: false,
         ),
+        if (isCollaborative) ...[
+          const SizedBox(height: 6),
+          InkWell(
+            onTap: () =>
+                showCollaborativePlaylistShareDialog(context, _playlist),
+            borderRadius: BorderRadius.circular(16),
+            child: Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 6,
+              ),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1DB954).withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: const Color(0xFF1DB954).withValues(alpha: 0.4),
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    FluentIcons.people_team_16_filled,
+                    size: 16,
+                    color: Color(0xFF1DB954),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Collaborative • ${((_playlist['collaborators'] as List?) ?? []).length} members',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF1DB954),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  const Icon(
+                    FluentIcons.chevron_right_12_regular,
+                    size: 12,
+                    color: Color(0xFF1DB954),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 6),
+        ],
         if (songsLength > 0)
           PlaylistActionButtons(
             leading: secondaryActions,
@@ -550,8 +658,9 @@ class _PlaylistPageState extends State<PlaylistPage> {
 
   /// Removes [song] from the canonical list (and storage), then re-derives the view.
   void _removeSong(Map song) {
+    final songId = (song['ytid'] ?? song['id'])?.toString();
     final canonicalIndex = _originalPlaylistList.indexWhere(
-      (s) => s is Map && s['ytid'] == song['ytid'],
+      (s) => s is Map && (s['ytid'] ?? s['id'])?.toString() == songId,
     );
     if (canonicalIndex == -1) return;
 
@@ -571,7 +680,12 @@ class _PlaylistPageState extends State<PlaylistPage> {
     _originalPlaylistList = List<dynamic>.from(_originalPlaylistList)
       ..removeAt(indexToRestore);
     _applySort();
-    final playlistId = _playlist['ytid'];
+    final playlistId = (_playlist['ytid'] ?? _playlist['id'])?.toString();
+    if (playlistId == null) {
+      if (mounted) setState(() {});
+      return;
+    }
+    final songToRemoveId = (songToRemove is Map ? (songToRemove['ytid'] ?? songToRemove['id']) : null)?.toString();
     if (mounted) {
       setState(() {});
       showToastWithButton(
@@ -587,7 +701,7 @@ class _PlaylistPageState extends State<PlaylistPage> {
           );
           if (result == context.l10n!.songAdded &&
               !_originalPlaylistList.any(
-                (song) => song['ytid'] == songToRemove['ytid'],
+                (song) => (song is Map ? (song['ytid'] ?? song['id']) : null)?.toString() == songToRemoveId,
               )) {
             final safeIndex = indexToRestore.clamp(
               0,
@@ -679,13 +793,14 @@ class _PlaylistPageState extends State<PlaylistPage> {
     final borderRadius = getItemBorderRadius(index, totalItems);
     final isUserCreatedPlaylist = _playlist?['source'] == 'user-created';
     final playlistId = isUserCreatedPlaylist ? _playlist!['ytid'] : null;
+    final songId = (song['ytid'] ?? song['id'])?.toString();
     final isSearching = _searchQueryNotifier.value.isNotEmpty;
-    final fullIndex = isSearching
-        ? PlaylistUtils.findSongIndexByYtid(_playlist, song['ytid'])
+    final fullIndex = isSearching && songId != null
+        ? PlaylistUtils.findSongIndexByYtid(_playlist, songId)
         : index;
 
     if (isSearching && fullIndex == -1) {
-      logger.log('Warning: Song ${song['ytid']} not found in full playlist');
+      logger.log('Warning: Song $songId not found in full playlist');
     }
 
     return SongBar(

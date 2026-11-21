@@ -5,11 +5,13 @@ import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:vybe/extensions/l10n.dart';
 import 'package:vybe/services/artist_service.dart';
+import 'package:vybe/services/collaborative_playlist_service.dart';
 import 'package:vybe/services/common_services.dart';
 import 'package:vybe/services/data_manager.dart';
 import 'package:vybe/services/playlists_manager.dart';
 import 'package:vybe/services/router_service.dart';
 import 'package:vybe/utilities/artwork_provider.dart';
+import 'package:vybe/utilities/collaborative_playlist_dialogs.dart';
 import 'package:vybe/utilities/flutter_toast.dart';
 import 'package:vybe/utilities/offline_playlist_dialogs.dart';
 import 'package:vybe/utilities/playlist_dialogs.dart';
@@ -114,6 +116,15 @@ class PlaylistBar extends StatelessWidget {
                               );
                             },
                           ),
+                        if (playlistData?['isCollaborative'] == true)
+                          const Padding(
+                            padding: EdgeInsets.only(right: 6),
+                            child: Icon(
+                              FluentIcons.people_team_16_filled,
+                              size: 15,
+                              color: Color(0xFF1DB954),
+                            ),
+                          ),
                         Expanded(
                           child: Text(
                             displayTitle,
@@ -185,6 +196,48 @@ class PlaylistBar extends StatelessWidget {
                         break;
                       case 'add_to_playlist':
                         _handleAddPlaylistToPlaylist(context);
+                        break;
+                      case 'collaborate_invite':
+                        if (playlistData != null) {
+                          showCollaborativePlaylistShareDialog(
+                            context,
+                            playlistData!,
+                          );
+                        }
+                        break;
+                      case 'make_collaborative':
+                        if (playlistData != null) {
+                          final pId =
+                              (playlistData!['ytid'] ?? playlistData!['id'])
+                                  ?.toString();
+                          if (pId != null) {
+                            CollaborativePlaylistService.instance
+                                .makePlaylistCollaborative(pId)
+                                .then((res) {
+                              if (res.success && context.mounted) {
+                                showToast(
+                                  context,
+                                  'Playlist is now collaborative!',
+                                );
+                                final match = userCustomPlaylists.value
+                                    .firstWhere(
+                                  (p) =>
+                                      (p['ytid'] ?? p['id'])?.toString() ==
+                                      pId,
+                                  orElse: () => playlistData!,
+                                );
+                                WidgetsBinding.instance.addPostFrameCallback((_) {
+                                  if (context.mounted) {
+                                    showCollaborativePlaylistShareDialog(
+                                      context,
+                                      match,
+                                    );
+                                  }
+                                });
+                              }
+                            });
+                          }
+                        }
                         break;
                       case 'remove_offline':
                         if (playlistData != null &&
@@ -259,6 +312,26 @@ class PlaylistBar extends StatelessWidget {
                           value: 'moveToFolder',
                           icon: FluentIcons.folder_24_regular,
                           label: context.l10n!.moveToFolder,
+                          colorScheme: colorScheme,
+                        ),
+                      if (playlistData != null &&
+                          !isFolder &&
+                          playlistData!['isCollaborative'] == true)
+                        buildPopupMenuItem<String>(
+                          value: 'collaborate_invite',
+                          icon: FluentIcons.people_team_24_filled,
+                          label: 'Invite Collaborators',
+                          colorScheme: colorScheme,
+                          iconColor: const Color(0xFF1DB954),
+                        ),
+                      if (playlistData != null &&
+                          !isFolder &&
+                          playlistData!['source'] == 'user-created' &&
+                          playlistData!['isCollaborative'] != true)
+                        buildPopupMenuItem<String>(
+                          value: 'make_collaborative',
+                          icon: FluentIcons.person_add_24_regular,
+                          label: 'Make Collaborative',
                           colorScheme: colorScheme,
                         ),
                       if (playlistData != null &&
@@ -554,7 +627,7 @@ class PlaylistBar extends StatelessWidget {
         return;
       }
 
-      context.push('/home/playlist/$_resolvedPlaylistId');
+      context.push(NavigationManager.playlistPath(_resolvedPlaylistId!));
     };
   }
 
@@ -614,7 +687,11 @@ class PlaylistBar extends StatelessWidget {
     );
 
     if (result != null) {
-      final index = userCustomPlaylists.value.indexOf(playlistData!);
+      final targetId =
+          (playlistData!['ytid'] ?? playlistData!['id'])?.toString();
+      final index = userCustomPlaylists.value.indexWhere(
+        (p) => (p['ytid'] ?? p['id'])?.toString() == targetId,
+      );
       if (index != -1) {
         final updatedPlaylists = List<Map>.from(userCustomPlaylists.value);
         updatedPlaylists[index] = result;
@@ -632,6 +709,34 @@ class PlaylistBar extends StatelessWidget {
 
         final appCtx = NavigationManager().context;
         showToast(appCtx, appCtx.l10n!.playlistUpdated);
+      } else {
+        var folderUpdated = false;
+        final updatedFolders = List<Map>.from(userPlaylistFolders.value);
+        for (final folder in updatedFolders) {
+          final list = List<Map>.from(folder['playlists'] ?? []);
+          final fIndex = list.indexWhere(
+            (p) => (p['ytid'] ?? p['id'])?.toString() == targetId,
+          );
+          if (fIndex != -1) {
+            list[fIndex] = result;
+            folder['playlists'] = list;
+            folderUpdated = true;
+            break;
+          }
+        }
+        if (folderUpdated) {
+          userPlaylistFolders.value = updatedFolders;
+          unawaited(
+            addOrUpdateData<List>(
+              'user',
+              'playlistFolders',
+              userPlaylistFolders.value,
+            ),
+          );
+          unawaited(syncOfflinePlaylistMetadata(result));
+          final appCtx = NavigationManager().context;
+          showToast(appCtx, appCtx.l10n!.playlistUpdated);
+        }
       }
     }
   }

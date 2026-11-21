@@ -190,4 +190,130 @@ void main() {
     controller.dispose();
     focus.dispose();
   });
+
+  testWidgets(
+    'search landing page hides history until focused, and shows rich history with dismiss button when focused',
+    (tester) async {
+      searchHistoryNotifier.value = [
+        {
+          'title': 'Satranga',
+          'artist': 'Arijit Singh',
+          'image': 'https://example.com/satranga.jpg',
+          'ytid': 'satranga123',
+          'isSong': true,
+        },
+      ];
+
+      await tester.pumpWidget(search());
+      await tester.pumpAndSettle();
+
+      // On landing page without focus: history is hidden, Browse all is visible
+      expect(find.text('Recent searches'), findsNothing);
+      expect(find.text('Satranga'), findsNothing);
+      expect(find.text('Browse all'), findsOneWidget);
+
+      // Tap search bar to focus it
+      await tester.tap(find.byType(TextField));
+      await tester.pumpAndSettle();
+
+      // Once focused: Recent searches appears with title, artist, and remove button
+      expect(find.text('Recent searches'), findsOneWidget);
+      expect(find.text('Satranga'), findsOneWidget);
+      expect(find.text('Arijit Singh'), findsOneWidget);
+      expect(find.byTooltip('Remove'), findsOneWidget);
+
+      // Tap remove button
+      await tester.tap(find.byTooltip('Remove'));
+      await tester.pumpAndSettle();
+
+      // Satranga is removed from recent searches
+      expect(find.text('Satranga'), findsNothing);
+      expect(searchHistoryNotifier.value, isEmpty);
+    },
+  );
+
+  test('parseStringifiedSongMap parses legacy stringified maps and populates thumbnails', () {
+    final songWithArt = parseStringifiedSongMap(
+      '{title: So Good (feat. Kendrick Lamar), artist: Kendrick Lamar, image: https://example.com/art.jpg, ytid: abc123}',
+    );
+    expect(songWithArt, isNotNull);
+    expect(songWithArt!['title'], 'So Good (feat. Kendrick Lamar)');
+    expect(songWithArt['artist'], 'Kendrick Lamar');
+    expect(songWithArt['image'], 'https://example.com/art.jpg');
+    expect(songWithArt['ytid'], 'abc123');
+    expect(songWithArt['isSong'], isTrue);
+
+    final songWithoutArt = parseStringifiedSongMap(
+      '{title: Tum Hi Ho, artist: Arijit Singh, Mithoon, ytid: xyz789}',
+    );
+    expect(songWithoutArt, isNotNull);
+    expect(songWithoutArt!['title'], 'Tum Hi Ho');
+    expect(songWithoutArt['artist'], 'Arijit Singh, Mithoon');
+    expect(songWithoutArt['image'], 'https://i.ytimg.com/vi/xyz789/mqdefault.jpg');
+    expect(songWithoutArt['ytid'], 'xyz789');
+
+    final artistEntry = parseStringifiedSongMap(
+      '{title: Adele, isArtist: true, ytid: adele_id}',
+    );
+    expect(artistEntry, isNotNull);
+    expect(artistEntry!['title'], 'Adele');
+    expect(artistEntry['isArtist'], isTrue);
+
+    // Regular search query strings return null
+    expect(parseStringifiedSongMap('wings machl'), isNull);
+    expect(parseStringifiedSongMap('so good'), isNull);
+  });
+
+  test('sanitizeSearchHistory converts stringified maps to proper objects, deduplicates, and filters out raw text queries', () {
+    final raw = [
+      '{title: Tum Hi Ho, artist: Arijit Singh, ytid: 123}',
+      'wings machl',
+      '{title: Tum Hi Ho, artist: Arijit Singh, ytid: 123}',
+      'wings machl',
+      'wings',
+    ];
+    final sanitized = sanitizeSearchHistory(raw);
+    expect(sanitized.length, 1);
+    expect(sanitized[0], isA<Map>());
+    expect(sanitized[0]['title'], 'Tum Hi Ho');
+    expect(sanitized[0]['image'], 'https://i.ytimg.com/vi/123/mqdefault.jpg');
+  });
+
+  testWidgets(
+    'legacy stringified maps in history render cleanly with thumbnail artwork and artist subtitle',
+    (tester) async {
+      searchHistoryNotifier.value = [
+        {
+          'title': 'So Good (feat. Kendrick Lamar)',
+          'artist': 'Kendrick Lamar',
+          'image': 'https://example.com/sogood.jpg',
+          'ytid': 'kdot123',
+          'isSong': true,
+        },
+        {
+          'title': 'Tum Hi Ho',
+          'artist': 'Arijit Singh',
+          'image': 'https://i.ytimg.com/vi/thh456/mqdefault.jpg',
+          'ytid': 'thh456',
+          'isSong': true,
+        },
+      ];
+
+      await tester.pumpWidget(search());
+      await tester.pumpAndSettle();
+
+      // Focus search bar
+      await tester.tap(find.byType(TextField));
+      await tester.pumpAndSettle();
+
+      // Raw "{title:" strings must NOT be displayed
+      expect(find.textContaining('{title:'), findsNothing);
+
+      // Clean titles and artists must be displayed
+      expect(find.text('So Good (feat. Kendrick Lamar)'), findsOneWidget);
+      expect(find.text('Kendrick Lamar'), findsOneWidget);
+      expect(find.text('Tum Hi Ho'), findsOneWidget);
+      expect(find.text('Arijit Singh'), findsOneWidget);
+    },
+  );
 }

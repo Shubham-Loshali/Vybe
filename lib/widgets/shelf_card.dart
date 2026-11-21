@@ -20,6 +20,8 @@ class ShelfCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final isAlbum = playlist['isAlbum'] == true;
+    final isArtist = playlist['isArtist'] == true ||
+        playlist['source']?.toString() == 'youtube-artist';
 
     return SizedBox(
       width: size,
@@ -27,12 +29,13 @@ class ShelfCard extends StatelessWidget {
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment:
+              isArtist ? CrossAxisAlignment.center : CrossAxisAlignment.start,
           children: [
             PlaylistCube(
               playlist,
               size: size,
-              borderRadius: 4,
+              borderRadius: isArtist ? size / 2 : 4,
               showTypeLabel: false,
             ),
             const SizedBox(height: 8),
@@ -40,6 +43,7 @@ class ShelfCard extends StatelessWidget {
               playlist['title']?.toString() ?? '',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
+              textAlign: isArtist ? TextAlign.center : TextAlign.start,
               style: const TextStyle(
                 color: Colors.white,
                 fontSize: 14,
@@ -48,9 +52,12 @@ class ShelfCard extends StatelessWidget {
             ),
             const SizedBox(height: 2),
             Text(
-              isAlbum ? context.l10n!.album : context.l10n!.playlist,
+              isArtist
+                  ? (context.l10n?.artist ?? 'Artist')
+                  : (isAlbum ? context.l10n!.album : context.l10n!.playlist),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
+              textAlign: isArtist ? TextAlign.center : TextAlign.start,
               style: TextStyle(
                 color: colorScheme.onSurfaceVariant,
                 fontSize: 12,

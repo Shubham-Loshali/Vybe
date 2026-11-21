@@ -1,28 +1,39 @@
-# Vybe Spotify CSV exporter
+# Vybe Spotify CSV Exporter Worker
 
-The Worker accepts `GET /spotify-playlist?id=<22-character Spotify playlist ID>`,
-requests public track metadata from the
-[Clearpath Apify actor](https://apify.com/clearpath/spotify-playlist-scraper), and
-returns UTF-8 CSV. The Android app reads the CSV in memory. It does not send
-users to a website or ask them to download a file. The separate Worker does
-not replace Vybe's existing update service.
+This is a dedicated, separate Cloudflare Worker (`vybe-spotify-exporter`) that accepts `GET /spotify-playlist?id=<22-character Spotify playlist ID>` and returns the complete playlist as UTF-8 CSV with track names and artists.
 
-To activate it:
+It runs independently from the update-policy / kill-switch worker.
 
-1. Sign in to Cloudflare and Apify as the maintainer. Review the actor's pricing
-   and set an Apify monthly spending limit before exposing the public endpoint.
-   The Worker also limits requests per IP and caps each actor run's charge.
-2. From this directory, run `npx wrangler secret put APIFY_TOKEN` and enter
-   the Apify token in the terminal prompt. Then run `npx wrangler deploy`.
-   The token belongs only in Cloudflare's secret store.
-3. Check the deployed `/spotify-playlist?id=...` with a public playlist. A
-   complete response includes `X-Playlist-Complete: true`. Then rebuild Vybe
-   with `--dart-define=SPOTIFY_CSV_EXPORT_URL=https://<worker-host>/spotify-playlist`.
-   Vybe tries this endpoint when Spotify's public preview is incomplete or
-   unavailable. If the exporter fails, Vybe can still offer the public preview.
+## Features
+- **Fast Pagination**: Fetches all pages of playlists up to 10,000 tracks in parallel.
+- **Edge Caching**: Caches full playlists for 10 minutes at Cloudflare's edge so duplicate requests respond instantly in milliseconds.
+- **Multiple Providers**:
+  1. **Spotify Web API (Recommended & Free)**: Uses Spotify Developer Client ID and Secret (`SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET`). 100% free with official pagination.
+  2. **Apify Actor (Optional)**: Uses `APIFY_TOKEN` if configured.
+  3. **Rate Limiting**: Protects against abusive loops via `EXPORT_RATE_LIMIT`.
 
-The provider advertises up to 10,000 tracks. A blocked, unavailable, or
-truncated playlist can still return an error or a partial result. The importer
-asks before saving a partial list.
+## Deployment
 
-Run the local Worker tests with `node --test worker.test.mjs`.
+1. From `workers/spotify-exporter`:
+   ```bash
+   # Set your Spotify Developer credentials (create a free app at https://developer.spotify.com/dashboard)
+   npx wrangler secret put SPOTIFY_CLIENT_ID
+   npx wrangler secret put SPOTIFY_CLIENT_SECRET
+
+   # Deploy the worker to Cloudflare
+   npx wrangler deploy
+   ```
+
+2. Your deployed worker URL will look like:
+   `https://vybe-spotify-exporter.<your-subdomain>.workers.dev/spotify-playlist`
+
+3. To connect Vybe Android, build with:
+   ```bash
+   flutter build apk --release --flavor github --dart-define=SPOTIFY_CSV_EXPORT_URL=https://<your-worker>/spotify-playlist
+   ```
+
+## Local Tests
+Run tests with:
+```bash
+node --test worker.test.mjs
+```

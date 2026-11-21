@@ -41,6 +41,27 @@ class CloudSyncService {
         lastSyncedAt.value = DateTime.tryParse(savedTime);
       }
 
+      final initialUser = FirebaseAuth.instance.currentUser;
+      if (initialUser != null) {
+        currentUser.value = initialUser;
+        _startWatchingLocalChanges();
+      } else {
+        try {
+          final googleSignIn = GoogleSignIn();
+          if (await googleSignIn.isSignedIn()) {
+            final googleUser = await googleSignIn.signInSilently();
+            if (googleUser != null) {
+              final auth = await googleUser.authentication;
+              final credential = GoogleAuthProvider.credential(
+                accessToken: auth.accessToken,
+                idToken: auth.idToken,
+              );
+              await FirebaseAuth.instance.signInWithCredential(credential);
+            }
+          }
+        } catch (_) {}
+      }
+
       FirebaseAuth.instance.userChanges().listen((user) {
         final previousUid = currentUser.value?.uid;
         if (user != null && !user.emailVerified) {

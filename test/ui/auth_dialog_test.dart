@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:ui' as ui;
 
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -15,6 +16,8 @@ import 'package:vybe/widgets/auth_dialog.dart';
 import '../support/ui_fixture.dart';
 
 class TestAuthService extends Fake implements CloudSyncService {
+  @override
+  final currentUser = ValueNotifier<User?>(null);
   @override
   final syncMessage = ValueNotifier<String?>(null);
   final signUps = <(String, String)>[];
@@ -122,7 +125,11 @@ void main() {
                 onPressed: () {
                   if (usePublicEntry) {
                     unawaited(
-                      AuthDialog.show(context, initiallySignUp: signUp),
+                      AuthDialog.show(
+                        context,
+                        initiallySignUp: signUp,
+                        service: service,
+                      ),
                     );
                   } else {
                     unawaited(
@@ -184,7 +191,7 @@ void main() {
       expect(tester.getSize(find.byType(Dialog)), const Size(390, 844));
       expect(find.text('Create account'), findsOneWidget);
       expect(find.text('Continue with Google'), findsOneWidget);
-      expect(find.text('Skip for now'), findsOneWidget);
+      expect(find.text('Skip for now'), findsNothing);
       await capture(tester, 'signup');
       expect(tester.takeException(), isNull);
     },
@@ -319,14 +326,9 @@ void main() {
         tester.widget<FilledButton>(find.byType(FilledButton)).onPressed,
         isNull,
       );
+      expect(find.text('Skip for now'), findsNothing);
       expect(
-        tester
-            .widget<TextButton>(find.widgetWithText(TextButton, 'Skip for now'))
-            .onPressed,
-        isNull,
-      );
-      expect(
-        tester.widget<PopScope>(find.byType(PopScope).first).canPop,
+        (tester.firstWidget(find.byWidgetPredicate((w) => w is PopScope)) as PopScope).canPop,
         isFalse,
       );
       await tester.binding.handlePopRoute();
@@ -435,16 +437,14 @@ void main() {
   );
 
   testWidgets(
-    'skip remembers the preference and dismisses the public account screen',
+    'sign in is compulsory: no skip button is offered and cannot pop while unauthenticated',
     (tester) async {
-      await Hive.box('settings').delete('auth_prompt_dismissed');
       await openAuth(tester, usePublicEntry: true);
-      await tester.tap(find.text('Skip for now'));
-      await tester.runAsync(() async => Future<void>.delayed(Duration.zero));
-      await tester.pumpAndSettle();
-      expect(Hive.box('settings').get('auth_prompt_dismissed'), isTrue);
-      expect(find.byType(AuthDialog), findsNothing);
-      expect(find.text('Open account'), findsOneWidget);
+      expect(find.text('Skip for now'), findsNothing);
+      expect(
+        (tester.firstWidget(find.byWidgetPredicate((w) => w is PopScope)) as PopScope).canPop,
+        isFalse,
+      );
     },
   );
 }

@@ -373,13 +373,13 @@ class _UserSongsPageState extends State<UserSongsPage> {
       song,
       true,
       onPlay: () {
-        final fullIndex = PlaylistUtils.findSongIndexByYtid(
-          playlist,
-          song['ytid'],
-        );
+        final songId = (song['ytid'] ?? song['id'])?.toString();
+        final fullIndex = songId != null
+            ? PlaylistUtils.findSongIndexByYtid(playlist, songId)
+            : index;
         if (fullIndex == -1) {
           logger.log(
-            'Warning: Song ${song['ytid']} not found in full song list',
+            'Warning: Song $songId not found in full song list',
           );
         }
         audioHandler.playPlaylistSong(

@@ -12,15 +12,19 @@ import 'package:path_provider/path_provider.dart';
 import 'package:receive_sharing_intent/receive_sharing_intent.dart';
 import 'package:vybe/extensions/l10n.dart';
 import 'package:vybe/localization/app_localizations.dart';
+import 'package:vybe/screens/listen_together_page.dart';
 import 'package:vybe/screens/local_sync_page.dart';
 import 'package:vybe/screens/startup_splash.dart';
 import 'package:vybe/services/audio_service.dart';
 import 'package:vybe/services/cloud_sync_service.dart';
+import 'package:vybe/services/collaborative_playlist_service.dart';
 import 'package:vybe/services/data_manager.dart';
+import 'package:vybe/services/followed_artists_service.dart';
 import 'package:vybe/services/io_service.dart';
 import 'package:vybe/services/listening_stats_service.dart';
 import 'package:vybe/services/local_sync_service.dart';
 import 'package:vybe/services/logger_service.dart';
+import 'package:vybe/services/offline_backup_service.dart';
 import 'package:vybe/services/playlist_sharing.dart';
 import 'package:vybe/services/playlists_manager.dart';
 import 'package:vybe/services/router_service.dart';
@@ -203,6 +207,7 @@ class _VybeState extends State<Vybe> with WidgetsBindingObserver {
         wasPlaying: audioHandler.audioPlayer.playing,
       );
       unawaited(listeningStatsService.flush());
+      unawaited(OfflineBackupService.instance.flushBackup());
     }
   }
 
@@ -380,6 +385,26 @@ Future<void> initialisation() async {
       );
     }
 
+    try {
+      await FollowedArtistsService.instance.initialise();
+    } catch (e, stackTrace) {
+      logger.log(
+        'Followed artists service could not start',
+        error: e,
+        stackTrace: stackTrace,
+      );
+    }
+
+    try {
+      CollaborativePlaylistService.instance.initialise();
+    } catch (e, stackTrace) {
+      logger.log(
+        'Collaborative playlist service could not start',
+        error: e,
+        stackTrace: stackTrace,
+      );
+    }
+
     if (isMobilePlatform) {
       audioHandler = await AudioService.init(
         builder: VybeAudioHandler.new,
@@ -428,9 +453,75 @@ Future<void> initialisation() async {
 
   applicationDirPath = (await getApplicationDocumentsDirectory()).path;
   await FilePaths.ensureDirectoriesExist();
+  OfflineBackupService.instance.initialise();
+  await OfflineBackupService.instance.initialiseAndRestoreIfNeeded();
 }
 
 void handleIncomingLink(Uri? uri) async {
+  if (uri != null &&
+      uri.scheme == 'vybe' &&
+      uri.host == 'collab' &&
+      uri.pathSegments.isNotEmpty) {
+    for (var attempt = 0; attempt < 20; attempt++) {
+      try {
+        final context = NavigationManager().context;
+        final code = uri.pathSegments.first;
+        final joinResult = await CollaborativePlaylistService.instance
+            .joinCollaborativePlaylist(code);
+        if (!context.mounted) return;
+        showToast(context, joinResult.message);
+        final playlist = joinResult.playlist;
+        if (joinResult.success && playlist != null) {
+          final playlistId = (playlist['ytid'] ?? playlist['id'])?.toString();
+          if (playlistId != null) {
+            unawaited(
+              NavigationManager.router.push(
+                NavigationManager.playlistPath(playlistId),
+              ),
+            );
+          }
+        }
+        return;
+      } on StateError {
+        await Future<void>.delayed(const Duration(milliseconds: 500));
+      } catch (e, stackTrace) {
+        logger.log(
+          'Failed to open Collaborative playlist link',
+          error: e,
+          stackTrace: stackTrace,
+        );
+        return;
+      }
+    }
+    return;
+  }
+
+  if (uri != null &&
+      uri.scheme == 'vybe' &&
+      uri.host == 'listen' &&
+      uri.pathSegments.isNotEmpty) {
+    // On a cold start the link arrives before the UI exists: wait for it.
+    for (var attempt = 0; attempt < 20; attempt++) {
+      try {
+        await openListenTogetherPage(
+          NavigationManager().context,
+          initialCode: uri.pathSegments.first,
+        );
+        return;
+      } on StateError {
+        await Future<void>.delayed(const Duration(milliseconds: 500));
+      } catch (e, stackTrace) {
+        logger.log(
+          'Failed to open Listen Together link',
+          error: e,
+          stackTrace: stackTrace,
+        );
+        return;
+      }
+    }
+    return;
+  }
+
   if (uri == null || uri.scheme != 'vybe' || uri.host != 'playlist') return;
 
   if (uri.pathSegments.length < 2 || uri.pathSegments[0] != 'custom') return;

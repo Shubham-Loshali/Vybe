@@ -1,0 +1,54 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 1. User Cloud Sync (Backup & Settings)
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // 2. Collaborative Playlists (Real-time shared playlists)
+    match /collaborativePlaylists/{code} {
+      // The invite code identifies a single playlist, including for guests.
+      allow get: if true;
+      allow create: if request.resource.data.id == code
+                    && request.resource.data.songs is list
+                    && request.resource.data.collaborators is list;
+      allow update: if request.resource.data.diff(resource.data).affectedKeys()
+                        .hasOnly(['songs', 'collaborators', 'updatedAt'])
+                    && request.resource.data.songs is list
+                    && request.resource.data.collaborators is list;
+    }
+
+    // 3. Listen Together (Real-time synchronized listening rooms)
+    match /listenRooms/{code} {
+      function room() {
+        return get(/databases/$(database)/documents/listenRooms/$(code)).data;
+      }
+
+      allow read: if request.auth != null;
+      allow create: if request.auth != null
+                    && request.resource.data.hostUid == request.auth.uid;
+      allow update: if request.auth != null
+                    && resource.data.hostUid == request.auth.uid
+                    && request.resource.data.hostUid == resource.data.hostUid;
+      allow delete: if request.auth != null
+                    && resource.data.hostUid == request.auth.uid;
+
+      match /members/{uid} {
+        allow read: if request.auth != null;
+        allow create, update: if request.auth != null && request.auth.uid == uid;
+        allow delete: if request.auth != null
+                      && (request.auth.uid == uid || room().hostUid == request.auth.uid);
+      }
+
+      match /commands/{commandId} {
+        allow create: if request.auth != null
+                      && request.resource.data.byUid == request.auth.uid
+                      && room().ended == false;
+        allow read, delete: if request.auth != null
+                            && room().hostUid == request.auth.uid;
+      }
+    }
+  }
+}

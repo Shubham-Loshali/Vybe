@@ -15,13 +15,21 @@ Future<StreamManifest> getManifestWithFallback(
   Object? lastError;
   StackTrace? lastStack;
 
+  // Cap per-client wait so a slow or hanging client quickly yields to the next fallback
+  final clientTimeout = timeout > const Duration(seconds: 8)
+      ? const Duration(seconds: 8)
+      : timeout;
+
   for (final client in fallbackClients) {
     try {
       final manifest = await yt.videos.streams
           .getManifest(songId, ytClients: [client])
-          .timeout(timeout);
+          .timeout(clientTimeout);
       if (manifest.audioOnly.isEmpty) {
         throw VideoUnavailableException('No audio streams for "$songId"');
+      }
+      if (_songClients.length > 200) {
+        _songClients.remove(_songClients.keys.first);
       }
       _songClients[songId] = client;
       return manifest;

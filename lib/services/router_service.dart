@@ -333,6 +333,10 @@ class NavigationManager {
     );
   }
 
+  /// Path of a playlist page.
+  static String playlistPath(String playlistId) =>
+      '$homePath/playlist/${Uri.encodeComponent(playlistId)}';
+
   /// Path of the page of an artist, inside the tab [context] belongs to.
   static String artistPath(BuildContext context, String artistId) =>
       '${basePathFor(context)}/artist/${Uri.encodeComponent(artistId)}';

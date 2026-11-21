@@ -114,8 +114,14 @@ AudioOnlyStreamInfo? selectAudioOnlyStreamForQuality(
     return selectionPool.last;
   } else if (qualitySetting == 'medium') {
     return selectionPool[(selectionPool.length - 1) ~/ 2];
+  } else if (qualitySetting == 'high') {
+    if (selectionPool.length > 2) {
+      return selectionPool[1];
+    }
+    return selectionPool.first;
   }
 
+  // 'lossless': Maximum available bitrate & uncompressed/transparent fidelity
   return selectionPool.first;
 }
 
@@ -129,18 +135,19 @@ List<AudioOnlyStreamInfo> _filterCompatibleAudioOnlySources(
 
 int _audioOnlyCompatibilityScore(AudioOnlyStreamInfo stream) {
   final codec = stream.codec.toString().toLowerCase();
+  final audioCodec = stream.audioCodec.toLowerCase();
   final container = stream.container.name.toLowerCase();
 
-  if (_isDolbyCodec(codec)) {
+  if (_isDolbyCodec(codec) || _isDolbyCodec(audioCodec)) {
     return 0;
   }
 
-  if ((codec.contains('mp4a') || codec.contains('aac')) &&
+  if ((codec.contains('mp4a') || codec.contains('aac') || audioCodec.contains('mp4a') || audioCodec.contains('aac')) &&
       (container == 'mp4' || container == 'm4a')) {
     return 3;
   }
 
-  if (codec.contains('opus') || codec.contains('vorbis')) {
+  if (codec.contains('opus') || codec.contains('vorbis') || audioCodec.contains('opus') || audioCodec.contains('vorbis')) {
     return 2;
   }
 

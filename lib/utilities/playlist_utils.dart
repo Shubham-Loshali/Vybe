@@ -77,11 +77,16 @@ class PlaylistUtils {
         .toList();
   }
 
-  /// Find the index of a song in a playlist by its ytid.
+  /// Find the index of a song in a playlist by its ytid or id.
   /// Returns the index if found, -1 if not found.
-  static int findSongIndexByYtid(Map playlist, String songYtid) {
+  static int findSongIndexByYtid(Map playlist, String? songYtid) {
+    if (songYtid == null || songYtid.isEmpty) return -1;
     final list = playlist['list'] as List<dynamic>? ?? [];
-    return list.indexWhere((s) => s is Map && s['ytid'] == songYtid);
+    return list.indexWhere((s) {
+      if (s is! Map) return false;
+      final target = (s['ytid'] ?? s['id'])?.toString();
+      return target == songYtid;
+    });
   }
 
   /// Check if a playlist already exists by title and song ytids.

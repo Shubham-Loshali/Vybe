@@ -7,10 +7,13 @@ import 'package:material_ui/material_ui.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:vybe/extensions/l10n.dart';
 import 'package:vybe/main.dart';
+import 'package:vybe/screens/listen_together_page.dart';
 import 'package:vybe/services/common_services.dart';
 import 'package:vybe/services/playlist_download_service.dart';
+import 'package:vybe/services/playlists_manager.dart';
 import 'package:vybe/services/settings_manager.dart';
 import 'package:vybe/utilities/artwork_color_extractor.dart';
+import 'package:vybe/utilities/collaborative_playlist_dialogs.dart';
 import 'package:vybe/utilities/flutter_toast.dart';
 import 'package:vybe/utilities/mediaitem.dart';
 import 'package:vybe/utilities/playlist_dialogs.dart';
@@ -193,6 +196,104 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
                         subject: '${metadata.title} - Vybe',
                       ),
                     );
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(
+                    FluentIcons.phone_desktop_24_regular,
+                    color: Color(0xFF1DB954),
+                  ),
+                  title: const Text(
+                    'Listen Together (Jam)',
+                    style: TextStyle(color: Colors.white),
+                  ),
+                  subtitle: const Text(
+                    'Listen in real time with friends',
+                    style: TextStyle(color: Colors.white54, fontSize: 12),
+                  ),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    openListenTogetherPage(context);
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(
+                    FluentIcons.person_add_24_regular,
+                    color: Color(0xFF1DB954),
+                  ),
+                  title: const Text(
+                    'Invite Playlist Collaborators',
+                    style: TextStyle(color: Colors.white),
+                  ),
+                  subtitle: const Text(
+                    'Share code or invite friends to collaborate',
+                    style: TextStyle(color: Colors.white54, fontSize: 12),
+                  ),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (!context.mounted) return;
+                      final collabPlaylists = userCustomPlaylists.value
+                          .where((p) => p['isCollaborative'] == true)
+                          .toList();
+                      if (collabPlaylists.length == 1) {
+                        showCollaborativePlaylistShareDialog(
+                          context,
+                          collabPlaylists.first,
+                        );
+                      } else if (collabPlaylists.isNotEmpty) {
+                        showModalBottomSheet(
+                          context: context,
+                          backgroundColor: const Color(0xFF242424),
+                          shape: const RoundedRectangleBorder(
+                            borderRadius: BorderRadius.vertical(
+                              top: Radius.circular(20),
+                            ),
+                          ),
+                          builder: (bCtx) => SafeArea(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Padding(
+                                  padding: EdgeInsets.all(16),
+                                  child: Text(
+                                    'Select Collaborative Playlist',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                ),
+                                ...collabPlaylists.map(
+                                  (p) => ListTile(
+                                    leading: const Icon(
+                                      FluentIcons.people_team_24_filled,
+                                      color: Color(0xFF1DB954),
+                                    ),
+                                    title: Text(
+                                      p['title']?.toString() ?? 'Playlist',
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                    onTap: () {
+                                      Navigator.pop(bCtx);
+                                      showCollaborativePlaylistShareDialog(
+                                        context,
+                                        p,
+                                      );
+                                    },
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      } else {
+                        showJoinCollaborativePlaylistDialog(context);
+                      }
+                    });
                   },
                 ),
                 ListTile(

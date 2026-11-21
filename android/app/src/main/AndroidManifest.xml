@@ -79,6 +79,23 @@
                     android:host="playlist"
                     android:pathPattern="/custom/.*" />
             </intent-filter>
+
+            <!-- Listen Together invites: vybe://listen/CODE -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="vybe"
+                    android:host="listen" />
+            </intent-filter>
+            <!-- Collaborative playlist invites: vybe://collab/CODE -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="vybe" android:host="collab" />
+            </intent-filter>
             <!-- Intent filter for handling text sharing -->
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />

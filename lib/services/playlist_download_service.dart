@@ -11,6 +11,7 @@ import 'package:vybe/main.dart';
 import 'package:vybe/services/common_services.dart';
 import 'package:vybe/services/data_manager.dart';
 import 'package:vybe/services/io_service.dart';
+import 'package:vybe/services/offline_backup_service.dart';
 import 'package:vybe/services/playlists_manager.dart';
 import 'package:vybe/utilities/flutter_toast.dart';
 
@@ -41,13 +42,16 @@ class OfflinePlaylistService {
 
   bool isPlaylistDownloaded(String playlistId) {
     return offlinePlaylists.value.any(
-      (playlist) => playlist['ytid'] == playlistId,
+      (playlist) =>
+          playlist is Map &&
+          (playlist['ytid'] ?? playlist['id'])?.toString() == playlistId,
     );
   }
 
   Map? getOfflinePlaylist(String playlistId) {
     for (final playlist in offlinePlaylists.value) {
-      if (playlist is Map && playlist['ytid']?.toString() == playlistId) {
+      if (playlist is Map &&
+          (playlist['ytid'] ?? playlist['id'])?.toString() == playlistId) {
         return playlist;
       }
     }
@@ -60,18 +64,27 @@ class OfflinePlaylistService {
 
   /// Marks [playlist] offline when all of its songs are available locally.
   void checkAndAutoMarkOffline(Map playlist) {
-    final id = playlist['ytid']?.toString();
+    final id = (playlist['ytid'] ?? playlist['id'])?.toString();
     final pList = playlist['list'] as List?;
     if (id == null || pList == null || pList.isEmpty) return;
     if (isPlaylistDownloaded(id)) return;
 
-    final offlineSongIds = userOfflineSongs.value.map((s) => s['ytid']).toSet();
-    if (!pList.every((s) => offlineSongIds.contains(s['ytid']))) return;
+    final offlineSongIds = userOfflineSongs.value
+        .map((s) => (s is Map ? (s['ytid'] ?? s['id']) : null)?.toString())
+        .whereType<String>()
+        .toSet();
+    if (!pList.every((s) =>
+        s is Map &&
+        offlineSongIds.contains((s['ytid'] ?? s['id'])?.toString()))) {
+      return;
+    }
 
     offlinePlaylists.value = [
       ...offlinePlaylists.value,
       {
         ...playlist,
+        'ytid': id,
+        'id': id,
         'list': pList,
         'downloadedAt': DateTime.now().millisecondsSinceEpoch,
       },
@@ -86,7 +99,7 @@ class OfflinePlaylistService {
   }
 
   Future<void> downloadPlaylist(BuildContext context, Map playlist) async {
-    final playlistId = playlist['ytid'] as String? ?? playlist['title'];
+    final playlistId = (playlist['ytid'] ?? playlist['id'])?.toString() ?? playlist['title']?.toString();
 
     if (playlistId == null || playlistId.isEmpty) {
       showToast(context, context.l10n!.error);
@@ -100,17 +113,23 @@ class OfflinePlaylistService {
     }
 
     // Initialize download state
-    final songsList = playlist['list'] as List<dynamic>? ?? [];
-    if (songsList.isEmpty) {
+    final songsList = playlist['list'];
+    if (songsList is! List || songsList.isEmpty) {
       showToast(context, context.l10n!.playlistEmpty);
       return;
     }
 
     // Set up progress tracking
-    final progressNotifier = getProgressNotifier(playlistId)
-      ..value = DownloadProgress(total: songsList.length);
+    final progressNotifier = getProgressNotifier(playlistId);
+    final progress = DownloadProgress(total: songsList.length);
     activeDownloads.add(playlistId);
+    progressNotifier.value = progress;
 
+    final deadline = Timer(Duration(minutes: songsList.length * 2), () {
+      logger.log('Download timeout for playlist $playlistId');
+      progress.isCancelled = true;
+      progressNotifier.notifyListeners();
+    });
     try {
       final songQueue = Queue<dynamic>.from(songsList);
       const maxConcurrent = 3;
@@ -121,15 +140,8 @@ class OfflinePlaylistService {
       await Future.wait([
         for (var i = 0; i < workerCount; i++)
           _processDownloadQueue(songQueue, progressNotifier),
-      ]).timeout(
-        Duration(minutes: songsList.length * 2),
-        onTimeout: () {
-          logger.log('Download timeout for playlist $playlistId');
-          progressNotifier.value.isCancelled = true;
-          progressNotifier.notifyListeners();
-          return <void>[];
-        },
-      );
+      ]);
+      deadline.cancel();
 
       // Handle completion
       await _handleDownloadCompletion(
@@ -144,17 +156,13 @@ class OfflinePlaylistService {
         error: e,
         stackTrace: stackTrace,
       );
-      activeDownloads.remove(playlistId);
-      cleanupProgressNotifier(playlistId);
       if (context.mounted) {
         showToast(context, '${context.l10n!.error}: $e');
       }
     } finally {
-      // Ensure cleanup happens even if _handleDownloadCompletion throws
-      if (activeDownloads.contains(playlistId)) {
-        activeDownloads.remove(playlistId);
-        cleanupProgressNotifier(playlistId);
-      }
+      deadline.cancel();
+      activeDownloads.remove(playlistId);
+      cleanupProgressNotifier(playlistId);
     }
   }
 
@@ -165,14 +173,12 @@ class OfflinePlaylistService {
     ValueNotifier<DownloadProgress> progressNotifier,
   ) async {
     try {
-      // Remove from active downloads
-      activeDownloads.remove(playlistId);
-
       final songsList = playlist['list'] as List<dynamic>;
 
-      // Only add to offline playlists if not cancelled and most songs succeeded
+      // Keep successful tracks, but advertise the full playlist only when
+      // every track is available offline.
       if (!progressNotifier.value.isCancelled &&
-          progressNotifier.value.completed > progressNotifier.value.failed) {
+          progressNotifier.value.completed == songsList.length) {
         // Create an offline version of the playlist
         final offlinePlaylist = {
           ...playlist,
@@ -188,7 +194,9 @@ class OfflinePlaylistService {
         final updatedPlaylists = List<dynamic>.from(offlinePlaylists.value);
 
         final existingIndex = updatedPlaylists.indexWhere(
-          (p) => p['ytid'] == playlistId,
+          (p) =>
+              p is Map &&
+              (p['ytid'] ?? p['id'])?.toString() == playlistId,
         );
 
         if (existingIndex != -1) {
@@ -199,7 +207,8 @@ class OfflinePlaylistService {
 
         // Also mark albums/playlists whose songs are now fully offline
         final offlineSongIds = userOfflineSongs.value
-            .map((s) => s['ytid'])
+            .map((s) => (s is Map ? (s['ytid'] ?? s['id']) : null)?.toString())
+            .whereType<String>()
             .toSet();
 
         final seenIds = <String>{};
@@ -211,18 +220,21 @@ class OfflinePlaylistService {
                 ...List<Map>.from(folder['playlists'] ?? []),
               ...playlists,
             ].where((p) {
-              final id = p['ytid']?.toString();
+              final id = (p['ytid'] ?? p['id'])?.toString();
               return id != null && seenIds.add(id);
             }).toList();
         for (final p in userPlaylistSources) {
           final pList = p['list'] as List?;
+          final pId = (p['ytid'] ?? p['id'])?.toString();
           if (pList == null ||
               pList.isEmpty ||
-              p['ytid'] == playlistId ||
-              isPlaylistDownloaded(p['ytid']?.toString() ?? '')) {
+              pId == playlistId ||
+              isPlaylistDownloaded(pId ?? '')) {
             continue;
           }
-          if (pList.every((s) => offlineSongIds.contains(s['ytid']))) {
+          if (pList.every((s) =>
+              s is Map &&
+              offlineSongIds.contains((s['ytid'] ?? s['id'])?.toString()))) {
             updatedPlaylists.add({
               ...p,
               'list': pList,
@@ -255,9 +267,6 @@ class OfflinePlaylistService {
           );
         }
       }
-
-      // Clean up the progress notifier now that the download is fully done.
-      cleanupProgressNotifier(playlistId);
     } catch (e, stackTrace) {
       logger.log(
         'Error handling download completion',
@@ -272,7 +281,9 @@ class OfflinePlaylistService {
 
     try {
       final progressNotifier = getProgressNotifier(playlistId);
-      progressNotifier.value.isCancelled = true;
+      final progress = progressNotifier.value;
+      if (progress.isCancelled) return;
+      progress.isCancelled = true;
       progressNotifier.notifyListeners();
 
       // Immediate visual feedback
@@ -282,23 +293,19 @@ class OfflinePlaylistService {
       final startTime = DateTime.now();
 
       // Wait for the ongoing tasks to complete with timeout
-      while (activeDownloads.contains(playlistId)) {
+      while (identical(progressNotifier.value, progress) &&
+          isPlaylistDownloading(playlistId)) {
         await Future.delayed(const Duration(milliseconds: 100));
 
         if (DateTime.now().difference(startTime) > maxWaitTime) {
           logger.log('Timeout waiting for download cancellation');
-          activeDownloads.remove(playlistId);
-          cleanupProgressNotifier(playlistId);
-          break;
+          return;
         }
       }
 
-      showToast(context, context.l10n!.downloadCancelled);
+      if (context.mounted) showToast(context, context.l10n!.downloadCancelled);
     } catch (e, stackTrace) {
       logger.log('Error cancelling download', error: e, stackTrace: stackTrace);
-      // Force remove from active downloads and cleanup on error
-      activeDownloads.remove(playlistId);
-      cleanupProgressNotifier(playlistId);
     }
   }
 
@@ -315,7 +322,7 @@ class OfflinePlaylistService {
       final playlistIndex = currentPlaylists.indexWhere(
         (playlist) =>
             playlist is Map &&
-            playlist['ytid']?.toString() == normalizedPlaylistId,
+            (playlist['ytid'] ?? playlist['id'])?.toString() == normalizedPlaylistId,
       );
 
       if (playlistIndex == -1) {
@@ -333,7 +340,8 @@ class OfflinePlaylistService {
 
       for (final song in songsInPlaylist) {
         try {
-          final songId = song['ytid'] as String?;
+          if (song is! Map) continue;
+          final songId = (song['ytid'] ?? song['id'])?.toString();
 
           if (songId == null || songId.isEmpty) {
             continue;
@@ -356,7 +364,9 @@ class OfflinePlaylistService {
       final latestPlaylists = offlinePlaylists.value;
       final updatedPlaylists = List<dynamic>.from(latestPlaylists)
         ..removeWhere(
-          (p) => p is Map && p['ytid']?.toString() == normalizedPlaylistId,
+          (p) =>
+              p is Map &&
+              (p['ytid'] ?? p['id'])?.toString() == normalizedPlaylistId,
         );
       offlinePlaylists.value = updatedPlaylists;
       unawaited(
@@ -425,15 +435,18 @@ class OfflinePlaylistService {
     final songIds = <String>{
       for (final playlist in offlinePlaylists.value)
         if (playlist is Map &&
-            playlist['ytid']?.toString() != excludedPlaylistId)
+            (playlist['ytid'] ?? playlist['id'])?.toString() != excludedPlaylistId)
           for (final song in playlist['list'] as List<dynamic>? ?? [])
-            if (song['ytid'] is String) song['ytid'] as String,
+            if (song is Map && (song['ytid'] ?? song['id']) != null)
+              (song['ytid'] ?? song['id']).toString(),
       for (final song in userLikedSongsList.value)
-        if (song['ytid'] is String) song['ytid'] as String,
+        if (song is Map && (song['ytid'] ?? song['id']) != null)
+          (song['ytid'] ?? song['id']).toString(),
       for (final playlist in getUserCustomPlaylists())
-        if (playlist['ytid']?.toString() != excludedPlaylistId)
+        if ((playlist['ytid'] ?? playlist['id'])?.toString() != excludedPlaylistId)
           for (final song in playlist['list'] as List<dynamic>? ?? [])
-            if (song['ytid'] is String) song['ytid'] as String,
+            if (song is Map && (song['ytid'] ?? song['id']) != null)
+              (song['ytid'] ?? song['id']).toString(),
     };
 
     return songIds;
@@ -455,8 +468,7 @@ class OfflinePlaylistService {
     while (activeDownloads.isNotEmpty) {
       if (DateTime.now().difference(startTime) > maxWaitTime) {
         logger.log('Timeout waiting for downloads to cancel before delete');
-        activeDownloads.clear();
-        break;
+        throw StateError('Downloads are still cancelling. Try again shortly.');
       }
       await Future.delayed(const Duration(milliseconds: 100));
     }
@@ -480,14 +492,13 @@ class OfflinePlaylistService {
 
       offlinePlaylists.value = [];
 
-      for (final notifier in downloadProgressNotifiers.values) {
-        notifier.dispose();
+      for (final id in downloadProgressNotifiers.keys.toList()) {
+        cleanupProgressNotifier(id);
       }
-      downloadProgressNotifiers.clear();
-      activeDownloads.clear();
 
       unawaited(addOrUpdateData<List>('userNoBackup', 'offlineSongs', []));
       unawaited(addOrUpdateData<List>('userNoBackup', 'offlinePlaylists', []));
+      await OfflineBackupService.instance.clearAllBackups();
 
       logger.log('All downloads deleted successfully');
     } catch (e, stackTrace) {
@@ -501,17 +512,14 @@ class OfflinePlaylistService {
   }
 
   void cleanupProgressNotifier(String playlistId) {
-    try {
-      if (downloadProgressNotifiers.containsKey(playlistId)) {
-        final notifier = downloadProgressNotifiers[playlistId];
-        notifier?.value = DownloadProgress(total: 0);
-      }
-    } catch (e, stackTrace) {
-      logger.log(
-        'Error cleaning up progress notifier',
-        error: e,
-        stackTrace: stackTrace,
-      );
+    if (isPlaylistDownloading(playlistId)) return;
+    final notifier = downloadProgressNotifiers[playlistId];
+    if (notifier == null) return;
+    if (notifier.hasListeners) {
+      notifier.value = DownloadProgress(total: 0);
+    } else {
+      downloadProgressNotifiers.remove(playlistId);
+      notifier.dispose();
     }
   }
 
@@ -523,9 +531,13 @@ class OfflinePlaylistService {
       final song = songQueue.removeFirst();
 
       try {
+        if (song is Map) {
+          song['ytid'] ??= song['id'];
+        }
+        final songYtid = (song is Map ? (song['ytid'] ?? song['id']) : null)?.toString();
         if (song == null ||
-            song['ytid'] == null ||
-            song['ytid'].toString().isEmpty) {
+            songYtid == null ||
+            songYtid.isEmpty) {
           logger.log('Invalid song data in playlist download');
           progressNotifier.value.failed++;
           progressNotifier.notifyListeners();
@@ -533,9 +545,9 @@ class OfflinePlaylistService {
         }
 
         // Skip if already offline
-        if (isSongAlreadyOffline(song['ytid'])) {
+        if (isSongAlreadyOffline(songYtid)) {
           // Find the existing offline song to get the correct audioPath
-          final offlineSong = getOfflineSongByYtid(song['ytid']);
+          final offlineSong = getOfflineSongByYtid(songYtid);
           if (offlineSong.isNotEmpty) {
             // Update the song in the playlist with the correct offline properties
             song['audioPath'] = offlineSong['audioPath'];
@@ -555,7 +567,7 @@ class OfflinePlaylistService {
         }
       } catch (e, stackTrace) {
         logger.log(
-          'Failed to download song: ${song?['title']}',
+          'Failed to download song: ${song is Map ? song['title'] : null}',
           error: e,
           stackTrace: stackTrace,
         );

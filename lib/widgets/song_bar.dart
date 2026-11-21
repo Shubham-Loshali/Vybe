@@ -446,6 +446,9 @@ class _SongBarState extends State<SongBar> {
                 child: _SongInfo(
                   title: _songTitle,
                   artist: _songArtist,
+                  addedByName: widget.song is Map
+                      ? widget.song['addedByName']?.toString()
+                      : null,
                   plays: plays,
                   colorScheme: colorScheme,
                   offlineStatus: _songOfflineStatus,
@@ -651,6 +654,7 @@ class _SongInfo extends StatelessWidget {
   const _SongInfo({
     required this.title,
     required this.artist,
+    this.addedByName,
     this.plays,
     required this.colorScheme,
     required this.offlineStatus,
@@ -659,6 +663,7 @@ class _SongInfo extends StatelessWidget {
   final ValueListenable<bool> offlineStatus;
   final String title;
   final String artist;
+  final String? addedByName;
   final String? plays;
   final ColorScheme colorScheme;
 
@@ -697,6 +702,36 @@ class _SongInfo extends StatelessWidget {
                 ),
               ),
             ),
+            if (addedByName != null && addedByName!.isNotEmpty) ...[
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: Text(
+                  '•',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+              const Icon(
+                FluentIcons.person_20_regular,
+                size: 12,
+                color: Color(0xFF1DB954),
+              ),
+              const SizedBox(width: 3),
+              Flexible(
+                child: Text(
+                  addedByName!,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    color: Color(0xFF1DB954),
+                  ),
+                ),
+              ),
+            ],
             if (plays != null && plays!.isNotEmpty) ...[
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 4),

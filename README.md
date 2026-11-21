@@ -115,6 +115,14 @@ Add some here! A row of 3-4 phone screenshots goes a long way.
 
 ---
 
+## Project layout
+
+- `lib/` contains the Flutter app, with screens, widgets, and services in their own folders.
+- `android/` contains the Android app and Gradle configuration.
+- `packages/` contains local Flutter dependencies, and `workers/` contains Cloudflare Workers.
+- `test/` contains Flutter tests and shared fixtures.
+- `artifacts/qa/` holds the local QA report and test logs. Saved APKs and native debug symbols go in `artifacts/releases/`.
+
 ## 🤝 Contributing
 
 Found a bug? Want a feature? PRs and issues are very welcome.

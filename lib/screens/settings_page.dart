@@ -5,12 +5,15 @@ import 'package:material_ui/material_ui.dart';
 import 'package:vybe/constants/app_constants.dart';
 import 'package:vybe/extensions/l10n.dart';
 import 'package:vybe/main.dart';
+import 'package:vybe/screens/listen_together_page.dart';
 import 'package:vybe/screens/local_sync_page.dart';
 import 'package:vybe/screens/search_page.dart';
 import 'package:vybe/services/common_services.dart';
 import 'package:vybe/services/data_manager.dart';
+import 'package:vybe/services/listen_together_service.dart';
 import 'package:vybe/services/listening_stats_service.dart';
 import 'package:vybe/services/local_sync_service.dart';
+import 'package:vybe/services/offline_backup_service.dart';
 import 'package:vybe/services/playlist_download_service.dart';
 import 'package:vybe/services/playlists_manager.dart';
 import 'package:vybe/services/router_service.dart';
@@ -98,6 +101,61 @@ class SettingsPage extends StatelessWidget {
             borderRadius: commonCustomBarRadiusFirst,
             onTap: () => context.push('/settings/equalizer'),
           ),
+        if (isMobilePlatform)
+          ValueListenableBuilder<ListenTogetherSession?>(
+            valueListenable: ListenTogetherService.instance.session,
+            builder: (_, session, __) {
+              return CustomBar(
+                'Listen Together',
+                FluentIcons.people_team_24_regular,
+                description: session == null
+                    ? 'Listen to the same song with friends, in sync.'
+                    : 'In session ${session.code}',
+                onTap: () => openListenTogetherPage(context),
+              );
+            },
+          ),
+        if (isMobilePlatform)
+          ValueListenableBuilder<int>(
+            valueListenable: crossfadeSeconds,
+            builder: (_, value, __) {
+              return CustomBar(
+                context.l10n!.crossfade,
+                FluentIcons.arrow_swap_24_regular,
+                description: context.l10n!.crossfadeDescription,
+                trailing: Text(
+                  value == 0 ? context.l10n!.crossfadeOff : '${value}s',
+                  style: TextStyle(color: primaryColor),
+                ),
+                onTap: () => _showCrossfadeDialog(context),
+              );
+            },
+          ),
+        ValueListenableBuilder<String>(
+          valueListenable: audioQualitySetting,
+          builder: (_, quality, __) {
+            final qualityLabel = switch (quality) {
+              'lossless' => 'Lossless',
+              'high' => context.l10n!.audioQualityHigh,
+              'medium' => context.l10n!.audioQualityMedium,
+              'low' => context.l10n!.audioQualityLow,
+              _ => 'Lossless',
+            };
+            return CustomBar(
+              context.l10n!.audioQuality,
+              FluentIcons.music_note_2_24_regular,
+              description: 'Stream & download audio quality',
+              trailing: Text(
+                qualityLabel,
+                style: TextStyle(
+                  color: primaryColor,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              onTap: () => _showAudioQualityDialog(context),
+            );
+          },
+        ),
         ValueListenableBuilder<bool>(
           valueListenable: useProxy,
           builder: (_, value, __) {
@@ -349,6 +407,23 @@ class SettingsPage extends StatelessWidget {
             }
           },
         ),
+        CustomBar(
+          'Restore Offline Downloads',
+          FluentIcons.arrow_download_24_regular,
+          onTap: () async {
+            final count =
+                await OfflineBackupService.instance.restoreOfflineBackup();
+            if (context.mounted) {
+              showToast(
+                context,
+                count > 0
+                    ? '$count offline songs verified and restored!'
+                    : 'No previous downloads found to restore',
+                icon: FluentIcons.checkmark_circle_24_regular,
+              );
+            }
+          },
+        ),
         if (!isFdroidBuild && isMobilePlatform)
           CustomBar(
             context.l10n!.downloadAppUpdate,
@@ -378,6 +453,141 @@ class SettingsPage extends StatelessWidget {
     if (context.mounted) {
       showToast(context, context.l10n!.settingChangedMsg);
     }
+  }
+
+  void _showCrossfadeDialog(BuildContext context) {
+    var selected = crossfadeSeconds.value;
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setState) => AlertDialog(
+          title: Text(context.l10n!.crossfade),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                selected == 0 ? context.l10n!.crossfadeOff : '${selected}s',
+                style: Theme.of(dialogContext).textTheme.titleLarge,
+              ),
+              Slider(
+                value: selected.toDouble(),
+                max: maxCrossfadeSeconds.toDouble(),
+                divisions: maxCrossfadeSeconds,
+                label: selected == 0
+                    ? context.l10n!.crossfadeOff
+                    : '${selected}s',
+                onChanged: (v) => setState(() => selected = v.round()),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: Text(context.l10n!.cancel),
+            ),
+            TextButton(
+              onPressed: () {
+                crossfadeSeconds.value = selected;
+                addOrUpdateData<int>('settings', 'crossfadeSeconds', selected);
+                Navigator.of(dialogContext).pop();
+                showToast(context, context.l10n!.settingChangedMsg);
+              },
+              child: Text(context.l10n!.confirm),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showAudioQualityDialog(BuildContext context) {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        final current = audioQualitySetting.value;
+        final options = [
+          (
+            key: 'lossless',
+            title: 'Lossless (Max)',
+            subtitle: 'Highest bitrates & transparent fidelity',
+          ),
+          (
+            key: 'high',
+            title: context.l10n!.audioQualityHigh,
+            subtitle: '160–256 kbps high quality',
+          ),
+          (
+            key: 'medium',
+            title: context.l10n!.audioQualityMedium,
+            subtitle: '128 kbps standard quality',
+          ),
+          (
+            key: 'low',
+            title: context.l10n!.audioQualityLow,
+            subtitle: 'Data saver (48–64 kbps)',
+          ),
+        ];
+
+        return AlertDialog(
+          backgroundColor: const Color(0xFF242424),
+          title: Text(
+            context.l10n!.audioQuality,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final opt in options)
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(
+                    opt.key == current
+                        ? FluentIcons.checkmark_circle_24_filled
+                        : FluentIcons.circle_24_regular,
+                    color: opt.key == current
+                        ? const Color(0xFF1DB954)
+                        : Colors.white38,
+                    size: 22,
+                  ),
+                  title: Text(
+                    opt.title,
+                    style: TextStyle(
+                      color: opt.key == current
+                          ? const Color(0xFF1DB954)
+                          : Colors.white,
+                      fontWeight: opt.key == current
+                          ? FontWeight.bold
+                          : FontWeight.w500,
+                    ),
+                  ),
+                  subtitle: Text(
+                    opt.subtitle,
+                    style: const TextStyle(color: Colors.white60, fontSize: 12),
+                  ),
+                  onTap: () {
+                    Navigator.of(dialogContext).pop();
+                    audioQualitySetting.value = opt.key;
+                    addOrUpdateData<String>('settings', 'audioQuality', opt.key);
+                    showToast(context, context.l10n!.audioQualityMsg);
+                  },
+                ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: Text(
+                context.l10n!.cancel,
+                style: const TextStyle(color: Colors.white70),
+              ),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   void _toggleAutoPlayNext(BuildContext context, bool value) {

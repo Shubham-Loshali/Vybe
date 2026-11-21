@@ -14,13 +14,13 @@ import 'package:vybe/services/settings_manager.dart';
 import 'package:vybe/utilities/app_utils.dart';
 import 'package:vybe/utilities/async_loader.dart';
 import 'package:vybe/utilities/flutter_toast.dart';
+import 'package:vybe/widgets/artist_follow_button.dart';
 import 'package:vybe/widgets/artist_shelf.dart';
 import 'package:vybe/widgets/mini_player_bottom_space.dart';
 import 'package:vybe/widgets/playlist_hero_artwork.dart';
 import 'package:vybe/widgets/playlist_page/add_to_playlist_button.dart';
 import 'package:vybe/widgets/playlist_page/download_button.dart';
 import 'package:vybe/widgets/playlist_page/empty_playlist_state.dart';
-import 'package:vybe/widgets/playlist_page/like_button.dart';
 import 'package:vybe/widgets/playlist_page/playlist_action_buttons.dart';
 import 'package:vybe/widgets/playlist_page/playlist_header.dart';
 import 'package:vybe/widgets/playlist_page/playlist_sliver_app_bar.dart';
@@ -307,9 +307,15 @@ class _ArtistPageState extends State<ArtistPage> {
       builder: (_, isLoading, __) => PlaylistActionButtons(
         isLoading: isLoading,
         leading: [
-          PlaylistLikeButton(
-            playlistId: _resolvedArtistId,
-            playlistData: () => artistPlaylistData(_artist!, songs: const []),
+          Padding(
+            padding: const EdgeInsets.only(right: 6),
+            child: ArtistFollowButton(
+              artistData: {
+                'ytid': _resolvedArtistId,
+                'title': _artistTitle,
+                'image': _artist?['image'] ?? widget.artistData?['image'],
+              },
+            ),
           ),
           // Downloading artist = downloading all its songs
           PlaylistDownloadButton(

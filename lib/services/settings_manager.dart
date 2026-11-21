@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:audio_service/audio_service.dart';
 import 'package:hive_ce/hive_ce.dart';
 import 'package:material_ui/material_ui.dart';
@@ -12,7 +14,7 @@ final shouldWeCheckUpdates = ValueNotifier<bool?>(
 );
 
 final playNextSongAutomatically = ValueNotifier<bool>(
-  Hive.box('settings').get('playNextSongAutomatically', defaultValue: true),
+  Hive.box('settings').get('playNextSongAutomatically', defaultValue: false),
 );
 
 final useSystemColor = ValueNotifier<bool>(
@@ -31,6 +33,15 @@ final wrappedEnabled = ValueNotifier<bool>(
   Hive.box('settings').get('wrappedEnabled', defaultValue: true),
 );
 
+/// Crossfade length in whole seconds. 0 disables crossfade entirely.
+const int maxCrossfadeSeconds = 12;
+
+final crossfadeSeconds = ValueNotifier<int>(
+  (Hive.box('settings').get('crossfadeSeconds', defaultValue: 0) as num)
+      .toInt()
+      .clamp(0, maxCrossfadeSeconds),
+);
+
 final sponsorBlockSupport = ValueNotifier<bool>(
   Hive.box('settings').get('sponsorBlockSupport', defaultValue: false),
 );
@@ -44,7 +55,7 @@ final useProxy = ValueNotifier<bool>(
 );
 
 final audioQualitySetting = ValueNotifier<String>(
-  Hive.box('settings').get('audioQuality', defaultValue: 'high'),
+  Hive.box('settings').get('audioQuality', defaultValue: 'lossless'),
 );
 
 final showAudioQualityBadge = ValueNotifier<bool>(
@@ -148,10 +159,13 @@ void reloadSettingsFromStorage() {
     defaultValue: true,
   );
   useProxy.value = settings.get('useProxy', defaultValue: false);
-  audioQualitySetting.value = settings.get(
-    'audioQuality',
-    defaultValue: 'high',
-  );
+  final currentAudioQuality = settings.get('audioQuality');
+  if (currentAudioQuality == null || currentAudioQuality == 'high') {
+    audioQualitySetting.value = 'lossless';
+    unawaited(settings.put('audioQuality', 'lossless'));
+  } else {
+    audioQualitySetting.value = currentAudioQuality as String;
+  }
   showAudioQualityBadge.value = settings.get(
     'showAudioQualityBadge',
     defaultValue: false,
