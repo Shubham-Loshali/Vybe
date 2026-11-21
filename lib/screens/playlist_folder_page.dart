@@ -28,12 +28,12 @@ class PlaylistFolderPage extends StatefulWidget {
 }
 
 class _PlaylistFolderPageState extends State<PlaylistFolderPage> {
-  late String _folderName;
-
-  @override
-  void initState() {
-    super.initState();
-    _folderName = widget.folderName;
+  String get _folderName {
+    final folder = userPlaylistFolders.value
+        .whereType<Map>()
+        .where((folder) => folder['id'] == widget.folderId)
+        .firstOrNull;
+    return folder?['name']?.toString() ?? widget.folderName;
   }
 
   @override
@@ -380,9 +380,6 @@ class _PlaylistFolderPageState extends State<PlaylistFolderPage> {
                 context,
               );
               showToast(context, result);
-              if (newName.trim().isNotEmpty) {
-                setState(() => _folderName = newName.trim());
-              }
             },
             icon: const Icon(FluentIcons.save_20_filled),
             label: Text(context.l10n!.update),

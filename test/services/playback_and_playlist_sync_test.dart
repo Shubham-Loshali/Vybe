@@ -10,6 +10,7 @@ import 'package:vybe/services/collaborative_playlist_service.dart';
 import 'package:vybe/services/common_services.dart';
 import 'package:vybe/services/io_service.dart';
 import 'package:vybe/services/playlists_manager.dart';
+import 'package:vybe/services/settings_manager.dart';
 import 'package:vybe/utilities/playlist_utils.dart';
 import 'package:vybe/utilities/sharing_intent.dart';
 
@@ -30,6 +31,9 @@ class _SharedSongAudioHandler extends Fake implements VybeAudioHandler {
 }
 
 void main() {
+  final collaborative = CollaborativePlaylistService.withPublisher(
+    (_, __) async {},
+  );
   TestWidgetsFlutterBinding.ensureInitialized();
   late Directory tempDir;
 
@@ -128,7 +132,7 @@ void main() {
     });
 
     test('addSong in CollaborativePlaylist preserves and normalizes song fields', () async {
-      final res = await CollaborativePlaylistService.instance.createCollaborativePlaylist('Collab Sync');
+      final res = await collaborative.createCollaborativePlaylist('Collab Sync');
       final playlistId = res.playlistId!;
 
       final songWithOnlyId = {
@@ -158,6 +162,33 @@ void main() {
   });
 
   group('Downloaded Playlist & Offline Song Fallback Tests', () {
+    test('offline mode only opens locally available playlists', () async {
+      final oldMode = offlineMode.value;
+      final oldPlaylists = onlinePlaylists.value;
+      final oldCustom = userCustomPlaylists.value;
+      addTearDown(() {
+        offlineMode.value = oldMode;
+        onlinePlaylists.value = oldPlaylists;
+        userCustomPlaylists.value = oldCustom;
+      });
+      final online = {
+        'ytid': 'remote-playlist',
+        'title': 'Online metadata',
+        'list': [{'ytid': 'remote-track'}],
+      };
+      final local = {
+        'ytid': 'customId-offline-qa',
+        'title': 'Personal playlist',
+        'list': <Map>[],
+      };
+      onlinePlaylists.value = [online];
+      userCustomPlaylists.value = [local];
+      offlineMode.value = false;
+      expect(await getPlaylistInfoForWidget('remote-playlist'), same(online));
+      offlineMode.value = true;
+      expect(await getPlaylistInfoForWidget('remote-playlist'), isNull);
+      expect(await getPlaylistInfoForWidget('customId-offline-qa'), local);
+    });
     test('Downloaded playlist metadata preserves offline flags and paths', () async {
       final testYtid = 'offline_track_999';
       final testAudio = File(FilePaths.getAudioPath(testYtid));
@@ -218,7 +249,7 @@ void main() {
     });
 
     test('Duplicate song prevention in collaborative playlist works for both ytid and id', () async {
-      final res = await CollaborativePlaylistService.instance.createCollaborativePlaylist('Deduplication Test');
+      final res = await collaborative.createCollaborativePlaylist('Deduplication Test');
       final playlistId = res.playlistId!;
 
       final song = {

@@ -11,7 +11,8 @@ void showToast(
   IconData? icon,
 }) {
   try {
-    final messenger = ScaffoldMessenger.maybeOf(context) ??
+    final messenger =
+        ScaffoldMessenger.maybeOf(context) ??
         ScaffoldMessenger.maybeOf(NavigationManager().context);
     if (messenger == null) return;
 
@@ -24,6 +25,7 @@ void showToast(
       ..hideCurrentSnackBar()
       ..showSnackBar(
         SnackBar(
+          behavior: SnackBarBehavior.floating,
           margin: EdgeInsets.fromLTRB(16, 12, 16, bottomMargin),
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           content: Row(
@@ -54,7 +56,8 @@ void showToastWithButton(
   IconData? icon,
 }) {
   try {
-    final messenger = ScaffoldMessenger.maybeOf(context) ??
+    final messenger =
+        ScaffoldMessenger.maybeOf(context) ??
         ScaffoldMessenger.maybeOf(NavigationManager().context);
     if (messenger == null) return;
 
@@ -67,6 +70,7 @@ void showToastWithButton(
       ..hideCurrentSnackBar()
       ..showSnackBar(
         SnackBar(
+          behavior: SnackBarBehavior.floating,
           margin: EdgeInsets.fromLTRB(16, 12, 16, bottomMargin),
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           content: Row(

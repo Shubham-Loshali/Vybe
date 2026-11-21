@@ -413,6 +413,7 @@ Future<void> initialisation() async {
           androidNotificationChannelName: 'Vybe',
           androidNotificationIcon: 'drawable/ic_launcher_foreground',
           androidShowNotificationBadge: true,
+          androidResumeOnClick: false,
           androidStopForegroundOnPause: false,
           // Handed to Android Auto on the browsable root. Without the search
           // flag the car never offers a search box, and without the content

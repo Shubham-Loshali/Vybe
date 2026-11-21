@@ -5,6 +5,7 @@ import 'package:vybe/extensions/l10n.dart';
 import 'package:vybe/main.dart' show logger, audioHandler;
 import 'package:vybe/services/common_services.dart';
 import 'package:vybe/services/data_manager.dart';
+import 'package:vybe/services/home_playback_history.dart';
 import 'package:vybe/services/settings_manager.dart';
 import 'package:vybe/utilities/app_utils.dart';
 import 'package:vybe/utilities/flutter_toast.dart';
@@ -287,6 +288,7 @@ class _UserSongsPageState extends State<UserSongsPage> {
                 Navigator.pop(context);
                 userRecentlyPlayed.value = [];
                 addOrUpdateData<List>('user', 'recentlyPlayedSongs', []);
+                HomePlaybackHistory.clear();
                 showToast(context, context.l10n!.recentlyPlayedMsg);
               },
             );

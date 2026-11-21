@@ -10,33 +10,55 @@ class ShelfCard extends StatelessWidget {
     required this.playlist,
     required this.onTap,
     this.size = 150,
+    this.subtitle,
+    this.onOpen,
+    this.artwork,
   });
 
   final Map playlist;
   final VoidCallback onTap;
   final double size;
+  final String? subtitle;
+  final VoidCallback? onOpen;
+  final Widget? artwork;
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final isAlbum = playlist['isAlbum'] == true;
-    final isArtist = playlist['isArtist'] == true ||
+    final isArtist =
+        playlist['isArtist'] == true ||
         playlist['source']?.toString() == 'youtube-artist';
 
     return SizedBox(
       width: size,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
+      child: InkWell(
         onTap: onTap,
         child: Column(
-          crossAxisAlignment:
-              isArtist ? CrossAxisAlignment.center : CrossAxisAlignment.start,
+          crossAxisAlignment: isArtist
+              ? CrossAxisAlignment.center
+              : CrossAxisAlignment.start,
           children: [
-            PlaylistCube(
-              playlist,
-              size: size,
-              borderRadius: isArtist ? size / 2 : 4,
-              showTypeLabel: false,
+            Stack(
+              children: [
+                artwork ??
+                    PlaylistCube(
+                      playlist,
+                      size: size,
+                      borderRadius: isArtist ? size / 2 : 4,
+                      showTypeLabel: false,
+                    ),
+                if (onOpen != null)
+                  Positioned(
+                    top: 4,
+                    right: 4,
+                    child: IconButton.filledTonal(
+                      tooltip: playlist['title']?.toString(),
+                      icon: const Icon(Icons.open_in_new, size: 18),
+                      onPressed: onOpen,
+                    ),
+                  ),
+              ],
             ),
             const SizedBox(height: 8),
             Text(
@@ -52,9 +74,12 @@ class ShelfCard extends StatelessWidget {
             ),
             const SizedBox(height: 2),
             Text(
-              isArtist
-                  ? (context.l10n?.artist ?? 'Artist')
-                  : (isAlbum ? context.l10n!.album : context.l10n!.playlist),
+              subtitle ??
+                  (isArtist
+                      ? (context.l10n?.artist ?? 'Artist')
+                      : (isAlbum
+                            ? context.l10n!.album
+                            : context.l10n!.playlist)),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               textAlign: isArtist ? TextAlign.center : TextAlign.start,

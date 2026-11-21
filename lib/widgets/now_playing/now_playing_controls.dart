@@ -449,20 +449,30 @@ class _PlaybackControlsRow extends StatelessWidget {
                     padding: playPadding,
                   ),
                   SizedBox(width: buttonSpacing),
-                  _PlaybackControlButton(
-                    icon: FluentIcons.next_24_filled,
-                    isEnabled:
-                        audioHandler.hasNext ||
-                        repeatMode == AudioServiceRepeatMode.one,
-                    tooltip: context.l10n!.skipToNext,
-                    onPressed: () => repeatMode == AudioServiceRepeatMode.one
-                        ? audioHandler.playAgain()
-                        : audioHandler.skipToNext(),
-                    colorScheme: colorScheme,
-                    buttonConstraints: buttonConstraints,
-                    buttonPadding: buttonPadding,
-                    controlIconSize: controlIconSize,
-                    minButtonSize: minButtonSize,
+                  StreamBuilder<PlaybackState>(
+                    stream: audioHandler.playbackState,
+                    builder: (context, _) => ListenableBuilder(
+                      listenable: Listenable.merge([
+                        playNextSongAutomatically,
+                        offlineMode,
+                      ]),
+                      builder: (context, _) => _PlaybackControlButton(
+                        icon: FluentIcons.next_24_filled,
+                        isEnabled:
+                            audioHandler.canSkipToNext ||
+                            repeatMode == AudioServiceRepeatMode.one,
+                        tooltip: context.l10n!.skipToNext,
+                        onPressed: () =>
+                            repeatMode == AudioServiceRepeatMode.one
+                            ? audioHandler.playAgain()
+                            : audioHandler.skipToNext(),
+                        colorScheme: colorScheme,
+                        buttonConstraints: buttonConstraints,
+                        buttonPadding: buttonPadding,
+                        controlIconSize: controlIconSize,
+                        minButtonSize: minButtonSize,
+                      ),
+                    ),
                   ),
                 ],
               ),

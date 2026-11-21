@@ -594,6 +594,212 @@ class ExploreService {
     return artists;
   }
 
+  /// Read chart entries separately from Explore's curated fallback playlists.
+  Future<List<Map<String, dynamic>>> fetchHomeCharts(
+    String countryCode, {
+    bool forceRefresh = false,
+  }) async {
+    final cacheKey = 'home_music_charts_v2_$countryCode';
+    var cachedCharts = <Map<String, dynamic>>[];
+    try {
+      final cached = await getData(
+        'cache',
+        cacheKey,
+        cachingDuration: const Duration(hours: 4),
+      );
+      if (cached is List) {
+        cachedCharts = cached.whereType<Map>().map(Map<String, dynamic>.from).toList();
+      }
+      if (!forceRefresh && cachedCharts.isNotEmpty) return cachedCharts;
+      final response = await http
+          .post(
+            Uri.parse('$_innertubeBase/browse'),
+            headers: _headers,
+            body: jsonEncode({
+              ..._buildRemixContext(countryCode: countryCode),
+              'browseId': 'FEmusic_charts',
+            }),
+          )
+          .timeout(const Duration(seconds: 8));
+      if (response.statusCode != 200) return cachedCharts;
+      final items = parseHomeCharts(jsonDecode(response.body));
+      if (items.where(
+        (item) => item['isArtist'] != true && item['isChartPlaylist'] != true,
+      ).length < 10) {
+        final chart = items
+            .where(
+              (item) =>
+                  item['isChartPlaylist'] == true &&
+                  RegExp(
+                    r'\btop (?:\d+ )?(?:songs|music videos)\b',
+                    caseSensitive: false,
+                  ).hasMatch(item['title'] as String),
+            )
+            .firstOrNull;
+        if (chart != null) {
+          try {
+            final tracks = await ytClient.playlists
+                .getVideos(chart['ytid'])
+                .take(24)
+                .toList()
+                .timeout(const Duration(seconds: 5));
+            items.addAll(
+              tracks.map(
+                (track) => {
+                  ...returnSongLayout(0, track, isCatalogTrack: true),
+                  'chartTitle': chart['title'],
+                },
+              ),
+            );
+          } catch (error) {
+            logger.log('Could not load tracks from the Home chart: $error');
+          }
+        }
+      }
+      if (items.isEmpty) return cachedCharts;
+      await addOrUpdateData('cache', cacheKey, items);
+      return items;
+    } catch (error, stackTrace) {
+      logger.log(
+        'Could not load Home charts',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      return cachedCharts;
+    }
+  }
+
+  static List<Map<String, dynamic>> parseHomeCharts(dynamic response) {
+    final entries = <Map<String, dynamic>>[];
+    final seen = <String>{};
+
+    Object? field(Object? value, String key) =>
+        value is Map ? value[key] : null;
+
+    Object? at(Object? value, List<String> path) {
+      for (final key in path) {
+        value = field(value, key);
+      }
+      return value;
+    }
+
+    String? asText(Object? value) => value is String ? value : null;
+    List<Map> runs(Object? value) =>
+        value is List ? value.whereType<Map>().toList() : [];
+    String runText(Object? value) =>
+        runs(value).map((run) => run['text']).whereType<String>().join().trim();
+
+    void visit(Object? value, [String? shelfTitle]) {
+      if (value is List) {
+        for (final item in value) {
+          visit(item, shelfTitle);
+        }
+      }
+      if (value is! Map) return;
+      final carousel =
+          value['musicCarouselShelfRenderer'] ??
+          value['musicShelfRenderer'] ??
+          value['musicPlaylistShelfRenderer'];
+      if (carousel is Map) {
+        final title = runText(
+          at(carousel, const [
+                'header',
+                'musicCarouselShelfBasicHeaderRenderer',
+                'title',
+                'runs',
+              ]) ??
+              at(carousel, const ['title', 'runs']),
+        );
+        visit(carousel['contents'], title.isEmpty ? shelfTitle : title);
+        return;
+      }
+      final row =
+          value['musicResponsiveListItemRenderer'] ??
+          value['musicTwoRowItemRenderer'];
+      if (row is! Map) {
+        for (final child in value.values) {
+          visit(child, shelfTitle);
+        }
+        return;
+      }
+
+      final columns = row['flexColumns'];
+      final texts = columns is List
+          ? columns
+                .map(
+                  (column) => at(column, const [
+                    'musicResponsiveListItemFlexColumnRenderer',
+                    'text',
+                    'runs',
+                  ]),
+                )
+                .toList()
+          : <Object?>[];
+      final title = runText(
+        texts.firstOrNull ?? at(row, const ['title', 'runs']),
+      );
+      final titleRun = runs(texts.firstOrNull).firstOrNull;
+      final endpoint =
+          row['navigationEndpoint'] ?? titleRun?['navigationEndpoint'];
+      final browseId =
+          asText(at(endpoint, const ['browseEndpoint', 'browseId'])) ?? '';
+      final videoId =
+          asText(at(row, const ['playlistItemData', 'videoId'])) ??
+          asText(at(endpoint, const ['watchEndpoint', 'videoId']));
+      final isArtist = browseId.startsWith('UC');
+      final isPlaylist = browseId.startsWith('VL');
+      final id = isPlaylist
+          ? browseId.substring(2)
+          : isArtist
+          ? browseId
+          : videoId;
+      if (id == null || id.isEmpty || title.isEmpty || !seen.add(id)) return;
+
+      final thumbnail = row['thumbnail'] ?? row['thumbnailRenderer'];
+      final thumbs = at(thumbnail, const [
+        'musicThumbnailRenderer',
+        'thumbnail',
+        'thumbnails',
+      ]);
+      final image = runs(thumbs).lastOrNull?['url'];
+      final credits = texts.length > 1
+          ? texts[1]
+          : at(row, const ['subtitle', 'runs']);
+      final artistNames = runs(credits)
+          .where((run) {
+            final id = asText(
+              at(run, const [
+                'navigationEndpoint',
+                'browseEndpoint',
+                'browseId',
+              ]),
+            );
+            return id?.startsWith('UC') ?? false;
+          })
+          .map((run) => run['text'])
+          .whereType<String>()
+          .toList();
+      entries.add({
+        'ytid': id,
+        'title': title,
+        if (image is String) 'image': image,
+        if (shelfTitle != null) 'chartTitle': shelfTitle,
+        'source': isArtist ? 'youtube-artist' : 'youtube',
+        'isArtist': isArtist,
+        'isChartPlaylist': isPlaylist,
+        if (!isArtist && !isPlaylist) ...{
+          'artist': artistNames.isEmpty
+              ? runText(credits)
+              : artistNames.join(', '),
+          if (image is String) ...{'lowResImage': image, 'highResImage': image},
+        },
+      });
+    }
+
+    if (response is Map) visit(response['contents']);
+    return entries;
+  }
+
   void _parsePlaylistsFromBrowse(
     dynamic root,
     void Function(String browseId, String title, String? imageUrl, {bool isAlbum}) onPlaylist,

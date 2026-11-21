@@ -15,7 +15,8 @@ void main() {
       final fallbackPolicy = jsonDecode(File('check.json').readAsStringSync());
       expect(fallbackPolicy, policy);
       final target = policy['version'] as String;
-      expect(target, appVersion);
+      // A local QA build can be newer than the last published update.
+      expect(isLatestVersionHigher(appVersion, target), isFalse);
       expect(policy['force_shutdown'], isFalse);
       expect(isLatestVersionHigher('10.6.2', target), isTrue);
       expect(isLatestVersionHigher('10.6.3', target), isTrue);

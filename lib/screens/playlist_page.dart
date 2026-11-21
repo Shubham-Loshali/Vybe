@@ -350,8 +350,9 @@ class _PlaylistPageState extends State<PlaylistPage> {
               if (playlistId != null) {
                 final res = await CollaborativePlaylistService.instance
                     .makePlaylistCollaborative(playlistId);
-                if (res.success && mounted) {
-                  showToast(context, 'Playlist is now collaborative!');
+                if (!mounted) return;
+                showToast(context, res.message);
+                if (res.success) {
                   for (final p in storedCustomPlaylists) {
                     if ((p['ytid'] ?? p['id'])?.toString() == playlistId) {
                       setState(() {
@@ -437,16 +438,14 @@ class _PlaylistPageState extends State<PlaylistPage> {
               songIndex: 0,
               shuffle: false,
             ),
-            onShuffle: () async {
-              final songs = _playlist['list'] as List? ?? [];
-              if (songs.isEmpty) return;
-              await audioHandler.addPlaylistToQueue(
-                List<Map>.from(songs.whereType<Map>()),
-                replace: true,
-                startIndex: 0,
-                shuffle: true,
-              );
-            },
+            onShuffle: () => audioHandler.playPlaylistSong(
+              playlist: {
+                ..._playlist,
+                'list': (_playlist['list'] as List).whereType<Map>().toList(),
+              },
+              songIndex: 0,
+              shuffle: true,
+            ),
           )
         else if (secondaryActions.isNotEmpty)
           Row(

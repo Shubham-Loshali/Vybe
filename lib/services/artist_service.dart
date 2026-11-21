@@ -145,6 +145,7 @@ Future<Map<String, dynamic>?> resolveArtist(
 Future<Map<String, dynamic>?> getArtistProfile(
   String artistId, {
   bool forceRefresh = false,
+  Duration? cacheDuration,
   bool cacheResult = true,
   String? sourceSongId,
   String? sourceVideoAuthor,
@@ -168,6 +169,7 @@ Future<Map<String, dynamic>?> getArtistProfile(
       final profile = await _artistPageOf(
         knownChannel?.toString() ?? lookup,
         forceRefresh: forceRefresh,
+        cacheDuration: cacheDuration,
         cacheResult: cacheResult,
         preferredName: preferredName,
         preferredImage: preferredImage,
@@ -199,6 +201,7 @@ Future<Map<String, dynamic>?> getArtistProfile(
     return await _artistPageOf(
       artist['ytid']?.toString() ?? lookup,
       forceRefresh: forceRefresh,
+      cacheDuration: cacheDuration,
       cacheResult: cacheResult,
       artist: artist,
     );
@@ -217,6 +220,7 @@ Future<Map<String, dynamic>?> getArtistProfile(
 Future<Map<String, dynamic>?> _artistPageOf(
   String artistId, {
   required bool forceRefresh,
+  Duration? cacheDuration,
   Map<String, dynamic>? artist,
   String? preferredName,
   String? preferredImage,
@@ -227,7 +231,11 @@ Future<Map<String, dynamic>?> _artistPageOf(
   // bad connection would otherwise leave the artist with no page at all.
   final cacheKey = _artistProfileCacheKey(artistId);
   if (!forceRefresh) {
-    final cachedProfile = await getData('cache', cacheKey);
+    final cachedProfile = await getData(
+      'cache',
+      cacheKey,
+      cachingDuration: cacheDuration,
+    );
     if (cachedProfile is Map) {
       return Map<String, dynamic>.from(cachedProfile);
     }
@@ -249,6 +257,7 @@ Future<Map<String, dynamic>?> _artistPageOf(
     return _artistPageOf(
       profile.id,
       forceRefresh: forceRefresh,
+      cacheDuration: cacheDuration,
       cacheResult: cacheResult,
       artist: artist,
       preferredName: preferredName,

@@ -58,6 +58,15 @@ Map<String, dynamic> returnSongLayout(
   final rawTitle = sep > 0 ? heading.substring(sep + 3) : heading;
   final title = isCatalogTrack ? rawTitle : formatSongTitle(rawTitle);
 
+  final tags = <String, Set<String>>{};
+  for (final keyword in song.keywords) {
+    final label = keyword.trim().toLowerCase().replaceAll('-', ' ');
+    final match = _musicKeywords[label];
+    if (match != null) {
+      tags.putIfAbsent(match.$1, () => {}).add(match.$2);
+    }
+  }
+
   return {
     'id': index,
     'ytid': song.id.toString(),
@@ -70,8 +79,34 @@ Map<String, dynamic> returnSongLayout(
     'highResImage': playlistImage ?? song.thumbnails.maxResUrl,
     'duration': song.duration?.inSeconds,
     'isLive': song.isLive,
+    for (final entry in tags.entries) entry.key: entry.value.toList(),
   };
 }
+
+// Use only explicit uploader keywords. A language or mood cannot be inferred
+// reliably from the artist's name, country, or video title.
+const _musicKeywords = {
+  'pop music': ('genres', 'Pop'),
+  'indie music': ('genres', 'Indie'),
+  'rock music': ('genres', 'Rock'),
+  'hip hop': ('genres', 'Hip Hop'),
+  'jazz music': ('genres', 'Jazz'),
+  'electronic music': ('genres', 'Electronic'),
+  'classical music': ('genres', 'Classical'),
+  'lofi': ('genres', 'Lofi'),
+  'lo fi': ('genres', 'Lofi'),
+  'hindi songs': ('languages', 'Hindi'),
+  'punjabi songs': ('languages', 'Punjabi'),
+  'tamil songs': ('languages', 'Tamil'),
+  'telugu songs': ('languages', 'Telugu'),
+  'english songs': ('languages', 'English'),
+  'spanish songs': ('languages', 'Spanish'),
+  'relaxing music': ('moods', 'Relaxing'),
+  'sad songs': ('moods', 'Sad'),
+  'party music': ('moods', 'Party'),
+  'workout music': ('moods', 'Workout'),
+  'romantic songs': ('moods', 'Romantic'),
+};
 
 String? getSongId(String url) => VideoId.parseVideoId(url);
 

@@ -372,14 +372,16 @@ void showCreatePlaylistDialog(
                                 NavigationManager().context,
                                 addResult,
                               );
-                            } else {
+                            }
+                            if (!collabResult.success ||
+                                (songToAdd == null && (songsToAdd?.isEmpty ?? true))) {
                               showToast(
                                 NavigationManager().context,
                                 collabResult.message,
                               );
                             }
 
-                            if (newPlaylistId.isNotEmpty) {
+                            if (collabResult.success && newPlaylistId.isNotEmpty) {
                               final matchIndex =
                                   userCustomPlaylists.value.indexWhere(
                                 (p) =>

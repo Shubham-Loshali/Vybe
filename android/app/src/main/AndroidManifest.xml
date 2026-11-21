@@ -125,9 +125,10 @@
             android:name="flutterEmbedding"
             android:value="2" />
 
-        <!-- AudioService -->
+        <!-- Let AudioService deliver onTaskRemoved so the Dart player can stop. -->
         <service android:name="com.ryanheise.audioservice.AudioService"
             android:foregroundServiceType="mediaPlayback"
+            android:stopWithTask="false"
             android:exported="true"
             tools:ignore="Instantiatable">
             <intent-filter>

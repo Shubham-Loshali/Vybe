@@ -13,10 +13,19 @@ import 'package:vybe/utilities/playlist_utils.dart';
 
 class CollaborativePlaylistService {
   CollaborativePlaylistService._internal()
-    : _writeArtwork = _writeFirestoreArtwork;
+    : _writeArtwork = _writeFirestoreArtwork,
+      _publish = _publishFirestorePlaylist;
 
   @visibleForTesting
-  CollaborativePlaylistService.withArtworkWriter(this._writeArtwork);
+  CollaborativePlaylistService.withArtworkWriter(this._writeArtwork)
+    : _publish = _publishFirestorePlaylist;
+
+  @visibleForTesting
+  CollaborativePlaylistService.withPublisher(this._publish)
+    : _writeArtwork = _writeFirestoreArtwork;
+
+  final Future<void> Function(String code, Map<String, dynamic> data) _publish;
+  final _pendingConversions = <String>{};
 
   final Future<void> Function(String code, Map<String, dynamic> change)
   _writeArtwork;
@@ -34,6 +43,15 @@ class CollaborativePlaylistService {
       .collection(_collectionName)
       .doc(code)
       .update(change);
+
+  static Future<void> _publishFirestorePlaylist(
+    String code,
+    Map<String, dynamic> data,
+  ) => FirebaseFirestore.instance.collection(_collectionName).doc(code).set({
+    ...data,
+    'createdAt': FieldValue.serverTimestamp(),
+    'updatedAt': FieldValue.serverTimestamp(),
+  });
 
   final Map<String, StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>>
       _subscriptions = {};
@@ -199,80 +217,30 @@ class CollaborativePlaylistService {
     BuildContext? context,
   }) async {
     final cleanTitle = title.trim().isEmpty ? 'Collaborative Playlist' : title.trim();
-    final inviteCode = _randomCode();
     final newPlaylistId = PlaylistUtils.generateCustomPlaylistId();
     final now = DateTime.now().millisecondsSinceEpoch;
-    final uid = _currentUid();
-    final userName = _displayName();
-
-    final collaboratorEntry = {
-      'uid': uid,
-      'name': userName,
-      'isOwner': true,
-      'joinedAt': now,
-    };
-
-    final playlistData = <String, dynamic>{
+    final playlist = {
       'ytid': newPlaylistId,
       'id': newPlaylistId,
-      'collabId': inviteCode,
-      'inviteCode': inviteCode,
       'title': cleanTitle,
       'source': 'user-created',
-      'isCollaborative': true,
-      'ownerUid': uid,
-      'ownerName': userName,
       if (image != null && image.isNotEmpty) 'image': image,
       'list': <dynamic>[],
-      'collaborators': [collaboratorEntry],
       'createdAt': now,
       'updatedAt': now,
     };
 
-    // Save locally
-    userCustomPlaylists.value = [...userCustomPlaylists.value, playlistData];
+    // Keep the personal playlist usable even when publishing is unavailable.
+    userCustomPlaylists.value = [...userCustomPlaylists.value, playlist];
     await _persistLocalPlaylists();
-
-    // Push to Firestore in background without blocking dialog
-    try {
-      final sharedImage = await prepareSharedArtwork(image);
-      unawaited(
-        FirebaseFirestore.instance
-            .collection(_collectionName)
-            .doc(inviteCode)
-            .set({
-              'id': inviteCode,
-              'title': cleanTitle,
-              'ownerUid': uid,
-              'ownerName': userName,
-              'image': sharedImage,
-              'createdAt': FieldValue.serverTimestamp(),
-              'updatedAt': FieldValue.serverTimestamp(),
-              'collaborators': [collaboratorEntry],
-              'songs': <dynamic>[],
-            })
-            .then((_) => _listenToCollabPlaylist(inviteCode))
-            .catchError((e, stackTrace) {
-              logger.log(
-                'Firestore create collaborative playlist error (saved locally)',
-                error: e,
-                stackTrace: stackTrace,
-              );
-            }),
-      );
-    } catch (e, stackTrace) {
-      logger.log(
-        'Firestore create collaborative playlist error (saved locally)',
-        error: e,
-        stackTrace: stackTrace,
-      );
-    }
-
+    final result = await makePlaylistCollaborative(newPlaylistId);
     return (
-      success: true,
-      message: 'Collaborative playlist created!',
+      success: result.success,
+      message: result.success
+          ? 'Collaborative playlist created!'
+          : 'Playlist saved locally. ${result.message}',
       playlistId: newPlaylistId,
-      inviteCode: inviteCode,
+      inviteCode: result.inviteCode,
     );
   }
 
@@ -319,35 +287,41 @@ class CollaborativePlaylistService {
       }
     }
 
-    existing['isCollaborative'] = true;
-    existing['collabId'] = inviteCode;
-    existing['inviteCode'] = inviteCode;
-    existing['ownerUid'] = uid;
-    existing['ownerName'] = userName;
-    existing['collaborators'] = [collaboratorEntry];
-    existing['list'] = stampedSongs;
-    existing['updatedAt'] = now;
-
-    updateStoredCustomPlaylist(playlistId, existing);
+    if (!_pendingConversions.add(playlistId)) {
+      return (success: false, message: 'Sharing is already in progress.', inviteCode: null);
+    }
 
     try {
-      final docRef = FirebaseFirestore.instance
-          .collection(_collectionName)
-          .doc(inviteCode);
-      await docRef
-          .set({
-            'id': inviteCode,
-            'title': existing['title'] ?? 'Collaborative Playlist',
-            'ownerUid': uid,
-            'ownerName': userName,
-            'image': await prepareSharedArtwork(existing['image']?.toString()),
-            'createdAt': FieldValue.serverTimestamp(),
-            'updatedAt': FieldValue.serverTimestamp(),
-            'collaborators': [collaboratorEntry],
-            'songs': stampedSongs,
-          })
-          .timeout(const Duration(seconds: 10));
+      await _publish(inviteCode, {
+        'id': inviteCode,
+        'title': existing['title'] ?? 'Collaborative Playlist',
+        'ownerUid': uid,
+        'ownerName': userName,
+        'image': await prepareSharedArtwork(existing['image']?.toString()),
+        'collaborators': [collaboratorEntry],
+        'songs': stampedSongs,
+      }).timeout(const Duration(seconds: 10));
 
+      final current = storedCustomPlaylists
+          .where((p) => (p['ytid'] ?? p['id'])?.toString() == playlistId)
+          .firstOrNull;
+      if (!identical(current, stored)) {
+        return (
+          success: false,
+          message: 'The playlist changed while sharing. Try again.',
+          inviteCode: null,
+        );
+      }
+      updateStoredCustomPlaylist(playlistId, {
+        'isCollaborative': true,
+        'collabId': inviteCode,
+        'inviteCode': inviteCode,
+        'ownerUid': uid,
+        'ownerName': userName,
+        'collaborators': [collaboratorEntry],
+        'list': stampedSongs,
+        'updatedAt': now,
+      });
       _listenToCollabPlaylist(inviteCode);
     } catch (e, stackTrace) {
       logger.log(
@@ -355,6 +329,13 @@ class CollaborativePlaylistService {
         error: e,
         stackTrace: stackTrace,
       );
+      return (
+        success: false,
+        message: 'Could not share the playlist. Check your connection and try again.',
+        inviteCode: null,
+      );
+    } finally {
+      _pendingConversions.remove(playlistId);
     }
 
     return (

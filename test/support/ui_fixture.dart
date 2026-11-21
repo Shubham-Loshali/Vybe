@@ -27,6 +27,24 @@ class UiTestAudioHandler extends Fake implements VybeAudioHandler {
   final positions = BehaviorSubject<PositionData>.seeded(
     PositionData(Duration.zero, Duration.zero, const Duration(minutes: 3)),
   );
+  final selectedSongs = <Map>[];
+  @override
+  bool get isCurrentSongLoaded => false;
+  @override
+  Future<void> playResumableSong(Map<dynamic, dynamic> song) async {
+    selectedSongs.add(song);
+  }
+
+  @override
+  Future<void> playPlaylistSong({
+    Map<dynamic, dynamic>? playlist,
+    required int songIndex,
+    bool? shuffle,
+  }) async {
+    final tracks = playlist?['list'] as List?;
+    if (tracks != null) selectedSongs.add(tracks[songIndex] as Map);
+  }
+
   @override
   Stream<PlaybackState> get playbackStateStream => playbackState.stream;
   @override

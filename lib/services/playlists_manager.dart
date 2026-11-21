@@ -1149,12 +1149,12 @@ Future<Map?> getPlaylistInfoForWidget(
   if (offlinePlaylist != null && (!forceRefresh || offlineMode.value)) {
     return offlinePlaylist;
   }
+  if (offlineMode.value) return null;
 
   if (normalizedId.startsWith('MPRE')) {
     // A YouTube Music release, opened from an artist page: it reads its own
     // title, artwork and artist, so nothing else has to be passed along. Only
     // the copy above is available offline, a release is never fetched there.
-    if (offlineMode.value) return null;
     return getArtistAlbum(normalizedId, forceRefresh: forceRefresh);
   }
 

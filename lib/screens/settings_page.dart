@@ -10,6 +10,7 @@ import 'package:vybe/screens/local_sync_page.dart';
 import 'package:vybe/screens/search_page.dart';
 import 'package:vybe/services/common_services.dart';
 import 'package:vybe/services/data_manager.dart';
+import 'package:vybe/services/home_playback_history.dart';
 import 'package:vybe/services/listen_together_service.dart';
 import 'package:vybe/services/listening_stats_service.dart';
 import 'package:vybe/services/local_sync_service.dart';
@@ -291,6 +292,7 @@ class SettingsPage extends StatelessWidget {
             onSubmit: () {
               userRecentlyPlayed.value = [];
               addOrUpdateData('user', 'recentlyPlayedSongs', <dynamic>[]);
+              HomePlaybackHistory.clear();
               showToast(context, '${context.l10n!.recentlyPlayedMsg}!');
             },
           ),

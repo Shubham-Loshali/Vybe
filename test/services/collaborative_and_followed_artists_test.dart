@@ -1,5 +1,6 @@
 // ignore_for_file: depend_on_referenced_packages, avoid_print, cascade_invocations, prefer_const_constructors, prefer_const_declarations, deprecated_member_use
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
@@ -17,6 +18,9 @@ import 'package:vybe/services/playlists_manager.dart';
 import '../support/test_account_user.dart';
 
 void main() {
+  final collaborative = CollaborativePlaylistService.withPublisher(
+    (_, __) async {},
+  );
   TestWidgetsFlutterBinding.ensureInitialized();
   late Directory tempDir;
 
@@ -141,6 +145,52 @@ void main() {
   });
 
   group('Collaborative Playlists Service Tests', () {
+    test('a failed invitation leaves a new or converted playlist usable locally', () async {
+      final rejecting = CollaborativePlaylistService.withPublisher(
+        (_, __) async => throw StateError('Server rejected the invite'),
+      );
+      final result = await rejecting.createCollaborativePlaylist('Local copy');
+      expect(result.success, isFalse);
+      expect(result.inviteCode, isNull);
+      final local = userCustomPlaylists.value.singleWhere((p) => p['ytid'] == result.playlistId);
+      expect(local['title'], 'Local copy');
+      expect(local['isCollaborative'], isNot(true));
+      final conversion = await rejecting.makePlaylistCollaborative(result.playlistId!);
+      expect(conversion.success, isFalse);
+      expect(conversion.inviteCode, isNull);
+      expect(userCustomPlaylists.value.singleWhere((p) => p['ytid'] == result.playlistId), same(local));
+
+      final retry = await collaborative.makePlaylistCollaborative(result.playlistId!);
+      expect(retry.success, isTrue);
+      expect(retry.inviteCode, isNotEmpty);
+    });
+
+    test('conversion preserves edits and rejects duplicate publish attempts', () async {
+      final publishing = Completer<void>();
+      final started = Completer<void>();
+      final service = CollaborativePlaylistService.withPublisher((_, __) {
+        started.complete();
+        return publishing.future;
+      });
+      const id = 'customId-publish-race-qa';
+      userCustomPlaylists.value = [
+        ...userCustomPlaylists.value,
+        {'ytid': id, 'title': 'Original', 'list': <Map>[]},
+      ];
+      final conversion = service.makePlaylistCollaborative(id);
+      await started.future;
+      for (var i = 0; i < 10; i++) {
+        final duplicate = await service.makePlaylistCollaborative(id);
+        expect(duplicate.success, isFalse);
+        expect(duplicate.inviteCode, isNull);
+      }
+      updateStoredCustomPlaylist(id, {'title': 'Renamed during upload'});
+      publishing.complete();
+      expect((await conversion).success, isFalse);
+      final stored = userCustomPlaylists.value.singleWhere((p) => p['ytid'] == id);
+      expect(stored['title'], 'Renamed during upload');
+      expect(stored['isCollaborative'], isNot(true));
+    });
     test('large uploads are resized proportionally for the shared document', () async {
       const width = 640;
       const height = 320;
@@ -269,7 +319,7 @@ void main() {
     });
 
     test('createCollaborativePlaylist sets attributes and adds to userCustomPlaylists', () async {
-      final res = await CollaborativePlaylistService.instance.createCollaborativePlaylist(
+      final res = await collaborative.createCollaborativePlaylist(
         'Chill Vibes with Friends',
         image: 'https://example.com/cover.jpg',
       );
@@ -294,7 +344,7 @@ void main() {
     });
 
     test('addSong and removeSong in collaborative playlist with collaborator attribution', () async {
-      final res = await CollaborativePlaylistService.instance.createCollaborativePlaylist(
+      final res = await collaborative.createCollaborativePlaylist(
         'Road Trip Beats',
       );
       final playlistId = res.playlistId!;
@@ -346,7 +396,7 @@ void main() {
         },
       ];
 
-      final res = await CollaborativePlaylistService.instance.makePlaylistCollaborative(customId);
+      final res = await collaborative.makePlaylistCollaborative(customId);
       expect(res.success, isTrue);
       expect(res.inviteCode, isNotNull);
       expect(res.inviteCode!.length, 6);

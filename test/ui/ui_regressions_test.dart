@@ -11,6 +11,8 @@ import 'package:vybe/screens/home_page.dart';
 import 'package:vybe/services/cloud_sync_service.dart';
 import 'package:vybe/services/common_services.dart';
 import 'package:vybe/services/followed_artists_service.dart';
+import 'package:vybe/services/home_feed_service.dart';
+import 'package:vybe/services/home_playback_history.dart';
 import 'package:vybe/services/playlist_download_service.dart';
 import 'package:vybe/services/playlists_manager.dart';
 import 'package:vybe/services/settings_manager.dart';
@@ -20,6 +22,7 @@ import 'package:vybe/widgets/artist_follow_button.dart';
 import 'package:vybe/widgets/marquee.dart';
 import 'package:vybe/widgets/mini_player.dart';
 import 'package:vybe/widgets/now_playing/spotify_like_button.dart';
+import 'package:vybe/widgets/playlist_artwork.dart';
 import 'package:vybe/widgets/playlist_bar.dart';
 import 'package:vybe/widgets/playlist_cover.dart';
 import 'package:vybe/widgets/playlist_cube.dart';
@@ -43,6 +46,138 @@ void main() {
     await audio.close();
     await Hive.close();
     await directory.delete(recursive: true);
+  });
+
+  final homeFeed = HomeFeedService(
+    loadProfile: (_) async => null,
+    loadAlbum: (_) async => null,
+    loadRelated: (_) async => [],
+    loadGeneral: () async => [],
+    loadCharts: (_) async => [
+      {
+        'ytid': 'chart-song',
+        'title': 'A Chart Track',
+        'artist': 'A Chart Artist',
+      },
+    ],
+    loadExplore: () async => [],
+  );
+
+  testWidgets('Home song cards send their own track to the player', (
+    tester,
+  ) async {
+    final previous = userRecentlyPlayed.value;
+    final previousWrapped = wrappedEnabled.value;
+    final account = CloudSyncService.instance.currentUser;
+    final previousAccount = account.value;
+    account.value = TestAccountUser(uid: 'home-feed-test');
+    wrappedEnabled.value = false;
+    userRecentlyPlayed.value = [
+      {
+        'ytid': 'recent-test',
+        'title': 'A Recent Track',
+        'artist': 'A Recent Artist',
+      },
+    ];
+    addTearDown(() {
+      wrappedEnabled.value = previousWrapped;
+      userRecentlyPlayed.value = previous;
+      audio.selectedSongs.clear();
+      account.value = previousAccount;
+    });
+    await tester.pumpWidget(uiApp(HomePage(feedService: homeFeed)));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('A Recent Track'));
+    await tester.tap(find.text('A Recent Track'));
+    await tester.ensureVisible(find.text('A Chart Track'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('A Chart Track'));
+    expect(audio.selectedSongs.map(homeItemId), ['recent-test', 'chart-song']);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  test('collection history saves one entry per playlist and clears', () async {
+    final playlist = {'ytid': 'customId-home-test', 'title': 'Playlist'};
+    await HomePlaybackHistory.record(playlist, {'ytid': 'first'});
+    await HomePlaybackHistory.record(playlist, {'ytid': 'second'});
+    expect(HomePlaybackHistory.collections.single['songId'], 'second');
+    await HomePlaybackHistory.clear();
+    expect(HomePlaybackHistory.collections, isEmpty);
+  });
+
+  testWidgets('Home shelves show whole cards and use wide video artwork', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390, 844);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final account = CloudSyncService.instance.currentUser;
+    final previousAccount = account.value;
+    final previousHistory = userRecentlyPlayed.value;
+    account.value = TestAccountUser(uid: 'home-artwork-test');
+    userRecentlyPlayed.value = [];
+    addTearDown(() {
+      account.value = previousAccount;
+      userRecentlyPlayed.value = previousHistory;
+    });
+    final feed = HomeFeedService(
+      loadProfile: (_) async => null,
+      loadAlbum: (_) async => null,
+      loadRelated: (_) async => [],
+      loadGeneral: () async => [],
+      loadCharts: (_) async => [
+        for (var i = 1; i <= 6; i++)
+          {
+            'ytid': 'chart-$i',
+            'title': 'Chart Track $i',
+            if (i == 1)
+              'image': 'https://img.youtube.com/vi/chart-1/sddefault.jpg',
+          },
+      ],
+      refreshCharts: (_) async => [
+        for (var i = 1; i <= 6; i++)
+          {'ytid': 'new-chart-$i', 'title': 'New Chart Track $i'},
+      ],
+      loadExplore: () async => [],
+    );
+    await tester.pumpWidget(uiApp(HomePage(feedService: feed)));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.descendant(of: find.byType(AppBar), matching: find.text('Songs')),
+    );
+    await tester.pumpAndSettle();
+    final pager = find.byType(PageView);
+    expect(pager, findsOneWidget);
+    expect(find.text('Chart Track 1').hitTestable(), findsOneWidget);
+    expect(find.text('Chart Track 2').hitTestable(), findsOneWidget);
+    expect(find.text('Chart Track 3').hitTestable(), findsOneWidget);
+    expect(find.text('Chart Track 4').hitTestable(), findsNothing);
+    final artwork = tester.widget<PlaylistArtwork>(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is PlaylistArtwork &&
+            widget.playlistArtwork ==
+                'https://img.youtube.com/vi/chart-1/mqdefault.jpg',
+      ),
+    );
+    expect(artwork.size, inInclusiveRange(100, 128));
+    await tester.drag(pager, const Offset(-310, 0));
+    await tester.pumpAndSettle();
+    expect(find.text('Chart Track 1').hitTestable(), findsNothing);
+    expect(find.text('Chart Track 4').hitTestable(), findsOneWidget);
+    expect(find.text('Chart Track 5').hitTestable(), findsOneWidget);
+    expect(find.text('Chart Track 6').hitTestable(), findsOneWidget);
+    await tester.drag(pager, const Offset(0, 350));
+    await tester.pumpAndSettle();
+    expect(find.text('Chart Track 4').hitTestable(), findsNothing);
+    expect(
+      find.textContaining('New Chart Track').hitTestable(),
+      findsNWidgets(3),
+    );
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
   });
 
   testWidgets('artist profile follow button persists after repeated taps', (
@@ -460,7 +595,7 @@ void main() {
     playlists = [];
     globalSongs = [{}];
     wrappedEnabled.value = false;
-    await tester.pumpWidget(uiApp(const HomePage()));
+    await tester.pumpWidget(uiApp(HomePage(feedService: homeFeed)));
     await tester.pumpAndSettle();
     expect(
       find.descendant(of: find.byType(AppBar), matching: find.text('V')),
@@ -518,7 +653,7 @@ void main() {
         displayName: 'Sasha Verma',
       );
 
-      await tester.pumpWidget(uiApp(const HomePage()));
+      await tester.pumpWidget(uiApp(HomePage(feedService: homeFeed)));
       await tester.pumpAndSettle();
       final greeting = find.descendant(
         of: find.byType(AppBar),

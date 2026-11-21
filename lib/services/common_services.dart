@@ -147,10 +147,7 @@ Future<String?> _getCachedSongUrl(
 Future<bool> _validateCachedUrl(String songId, String cachedUrl) async {
   try {
     final response = await http
-        .head(
-          Uri.parse(cachedUrl),
-          headers: streamPlaybackHeaders(songId),
-        )
+        .head(Uri.parse(cachedUrl), headers: streamPlaybackHeaders(songId))
         .timeout(const Duration(milliseconds: 1500));
     return response.statusCode >= 200 && response.statusCode < 300;
   } catch (_) {
@@ -197,7 +194,10 @@ Future<List> _getRecommendationsFromRecentlyPlayed() async {
 }
 
 /// Expands seed songs into related videos and ranks them for home and playlist recommendations.
-Future<List> _getRecommendationsFromSeedSongs(List seedSongs) async {
+Future<List> _getRecommendationsFromSeedSongs(
+  List seedSongs, {
+  int tracksPerSeed = 8,
+}) async {
   final seeds = seedSongs
       .whereType<Map>()
       .where((song) => (song['ytid']?.toString() ?? '').isNotEmpty)
@@ -213,10 +213,10 @@ Future<List> _getRecommendationsFromSeedSongs(List seedSongs) async {
     try {
       final song = await ytClient.videos.get(songData['ytid']);
       final related = await ytClient.videos.getRelatedVideos(song) ?? [];
-      for (var i = 0; i < related.length && i < 8; i++) {
+      for (var i = 0; i < related.length && i < tracksPerSeed; i++) {
         final s = returnSongLayout(0, related[i]);
         final id = s['ytid'];
-        final positionWeight = 1.0 - (i / 8);
+        final positionWeight = 1.0 - (i / tracksPerSeed);
         final recencyWeight = 1.0 - (seedIndex / seeds.length);
         scores[id] = (scores[id] ?? 0) + positionWeight * recencyWeight;
         songMap[id] = s;
@@ -242,6 +242,24 @@ const _playlistRecommendationSeedCount = 5;
 
 /// In-memory recommendations cache keyed by playlist ytid and cleared on app restart.
 final Map<String, List> _playlistRecommendationsCache = {};
+
+/// Use the existing related-track ranking for a Home shelf with a named seed.
+Future<List<Map>> getHomeSeedRecommendations(Map seed) async {
+  final id = seed['ytid']?.toString();
+  if (id == null || id.isEmpty) return [];
+  final key = 'home_related_v2_$id';
+  final cached = await getData(
+    'cache',
+    key,
+    cachingDuration: const Duration(hours: 6),
+  );
+  if (cached is List) return cached.whereType<Map>().toList();
+  final songs = await _getRecommendationsFromSeedSongs([
+    seed,
+  ], tracksPerSeed: 15);
+  if (songs.isNotEmpty) await addOrUpdateData('cache', key, songs);
+  return songs.whereType<Map>().toList();
+}
 
 /// Gets playlist-seeded recommendations, reusing cached results and returning an empty list on failure.
 Future<List> getRecommendedSongsForPlaylist(
@@ -311,8 +329,8 @@ Future<List> _getRecommendationsFromMixedSources() async {
 
   if (globalSongs.isEmpty) {
     try {
-      final explorePlaylists =
-          await ExploreService.instance.fetchExplorePlaylists();
+      final explorePlaylists = await ExploreService.instance
+          .fetchExplorePlaylists();
       if (explorePlaylists.isNotEmpty) {
         final firstId = explorePlaylists.first['ytid']?.toString() ?? '';
         if (firstId.isNotEmpty) {
@@ -633,13 +651,12 @@ _selectedAudioStreams = {};
 
 const _maxSelectedAudioStreams = 50;
 
-String _selectedAudioStreamKey(String songId) =>
-    '${songId}_${audioQualitySetting.value}';
+String _selectedAudioStreamKey(String songId, String quality) =>
+    '${songId}_$quality';
 
 /// Returns the stream resolved earlier for a song, unless it is old enough
 /// that its URL may have expired.
-AudioOnlyStreamInfo? _getSelectedAudioStream(String songId) {
-  final key = _selectedAudioStreamKey(songId);
+AudioOnlyStreamInfo? _getSelectedAudioStream(String key) {
   final entry = _selectedAudioStreams[key];
   if (entry == null) return null;
 
@@ -651,36 +668,50 @@ AudioOnlyStreamInfo? _getSelectedAudioStream(String songId) {
   return entry.stream;
 }
 
-void _cacheSelectedAudioStream(String songId, AudioOnlyStreamInfo stream) {
+void _cacheSelectedAudioStream(String key, AudioOnlyStreamInfo stream) {
   if (_selectedAudioStreams.length >= _maxSelectedAudioStreams) {
     _selectedAudioStreams.remove(_selectedAudioStreams.keys.first);
   }
 
-  _selectedAudioStreams[_selectedAudioStreamKey(songId)] = (
-    stream: stream,
-    resolvedAt: DateTime.now(),
-  );
+  _selectedAudioStreams[key] = (stream: stream, resolvedAt: DateTime.now());
 }
 
 final Map<String, ({String url, DateTime expiry})> _memoryStreamUrlCache = {};
+final _inFlightPlaybackUrls = <String, Future<String?>>{};
 
 /// Drops both cached forms of a song's stream, so the next request resolves
 /// it again. Used when a cached URL turns out to be dead.
 Future<void> invalidateSongStreamCache(String songId) async {
-  _memoryStreamUrlCache.remove(songId);
-  _selectedAudioStreams.remove(_selectedAudioStreamKey(songId));
-  await deleteData('cache', 'song_${songId}_${audioQualitySetting.value}_url');
+  final quality = audioQualitySetting.value;
+  final cacheKey = 'song_${songId}_${quality}_url';
+  // Finish a concurrent validation before clearing its result for the retry.
+  try {
+    await _inFlightPlaybackUrls[cacheKey];
+  } catch (error) {
+    logger.log(
+      'Concurrent stream lookup failed during invalidation',
+      error: error,
+    );
+  }
+  _memoryStreamUrlCache.remove(cacheKey);
+  _selectedAudioStreams.remove(_selectedAudioStreamKey(songId, quality));
+  await deleteData('cache', cacheKey);
 }
 
 /// Fetches the best available audio stream for a song.
-Future<AudioOnlyStreamInfo?> fetchBestAudioStream(String? songId) async {
+Future<AudioOnlyStreamInfo?> fetchBestAudioStream(
+  String? songId, {
+  String? quality,
+}) async {
   try {
     if (songId == null || songId.isEmpty) {
       logger.log('fetchBestAudioStream: songId is null or empty');
       return null;
     }
 
-    final cachedStream = _getSelectedAudioStream(songId);
+    final requestedQuality = quality ?? audioQualitySetting.value;
+    final key = _selectedAudioStreamKey(songId, requestedQuality);
+    final cachedStream = _getSelectedAudioStream(key);
     if (cachedStream != null) return cachedStream;
 
     final manifest = await _fetchStreamManifest(songId);
@@ -690,7 +721,10 @@ Future<AudioOnlyStreamInfo?> fetchBestAudioStream(String? songId) async {
       return null;
     }
 
-    final selectedStream = selectAudioOnlyStreamForQuality(audioStream);
+    final selectedStream = selectAudioOnlyStreamForQuality(
+      audioStream,
+      quality: requestedQuality,
+    );
     if (selectedStream == null) {
       logger.log(
         'fetchBestAudioStream: no compatible audio streams for $songId',
@@ -698,7 +732,7 @@ Future<AudioOnlyStreamInfo?> fetchBestAudioStream(String? songId) async {
       return null;
     }
 
-    _cacheSelectedAudioStream(songId, selectedStream);
+    _cacheSelectedAudioStream(key, selectedStream);
     return selectedStream;
   } on TimeoutException catch (_) {
     logger.log('fetchBestAudioStream request timed out for $songId');
@@ -726,45 +760,23 @@ Future<String?> fetchSongStreamUrl(String songId, bool isLive) async {
       return streamInfo;
     }
 
-    // Fast in-memory cache check (0ms playback start)
-    final mem = _memoryStreamUrlCache[songId];
+    final quality = audioQualitySetting.value;
+    final cacheKey = 'song_${songId}_${quality}_url';
+    final mem = _memoryStreamUrlCache[cacheKey];
     if (mem != null && DateTime.now().isBefore(mem.expiry)) {
       return mem.url;
     }
 
-    const _cacheDuration = Duration(hours: 3);
-    final cacheKey = 'song_${songId}_${audioQualitySetting.value}_url';
-
-    // Try to get from cache
-    final cachedUrl = await _getCachedSongUrl(songId, cacheKey, _cacheDuration);
-    if (cachedUrl != null) {
-      _memoryStreamUrlCache[songId] = (
-        url: cachedUrl,
-        expiry: DateTime.now().add(const Duration(minutes: 90)),
-      );
-      return cachedUrl;
+    // A tap can arrive while the next track is already being preloaded.
+    final pending = _inFlightPlaybackUrls[cacheKey];
+    if (pending != null) return await pending;
+    final lookup = _resolveSongStreamUrl(songId, cacheKey, quality);
+    _inFlightPlaybackUrls[cacheKey] = lookup;
+    try {
+      return await lookup;
+    } finally {
+      unawaited(_inFlightPlaybackUrls.remove(cacheKey));
     }
-
-    // Get fresh URL, reusing the stream already resolved for this song.
-    final selectedStream = await fetchBestAudioStream(songId);
-    if (selectedStream == null) {
-      logger.log('fetchSongStreamUrl: no audio streams for $songId');
-      return null;
-    }
-
-    final url = selectedStream.url.toString();
-
-    if (_memoryStreamUrlCache.length > 200) {
-      _memoryStreamUrlCache.remove(_memoryStreamUrlCache.keys.first);
-    }
-    _memoryStreamUrlCache[songId] = (
-      url: url,
-      expiry: DateTime.now().add(const Duration(minutes: 90)),
-    );
-
-    unawaited(addOrUpdateData<String>('cache', cacheKey, url));
-
-    return url;
   } on TimeoutException catch (_) {
     logger.log('fetchSongStreamUrl request timed out for $songId');
     return null;
@@ -776,6 +788,34 @@ Future<String?> fetchSongStreamUrl(String songId, bool isLive) async {
     );
     return null;
   }
+}
+
+Future<String?> _resolveSongStreamUrl(
+  String songId,
+  String cacheKey,
+  String quality,
+) async {
+  const cacheDuration = Duration(hours: 3);
+  final cachedUrl = await _getCachedSongUrl(songId, cacheKey, cacheDuration);
+  final url =
+      cachedUrl ??
+      (await fetchBestAudioStream(songId, quality: quality))?.url.toString();
+  if (url == null) {
+    logger.log('fetchSongStreamUrl: no audio streams for $songId');
+    return null;
+  }
+
+  if (_memoryStreamUrlCache.length > 200) {
+    _memoryStreamUrlCache.remove(_memoryStreamUrlCache.keys.first);
+  }
+  _memoryStreamUrlCache[cacheKey] = (
+    url: url,
+    expiry: DateTime.now().add(const Duration(minutes: 90)),
+  );
+  if (cachedUrl == null) {
+    unawaited(addOrUpdateData<String>('cache', cacheKey, url));
+  }
+  return url;
 }
 
 Future<Map<String, dynamic>> getSongDetails(

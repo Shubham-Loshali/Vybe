@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:math' as math;
+import 'dart:ui' show PlatformDispatcher;
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:fluentui_system_icons/fluentui_system_icons.dart';
@@ -9,49 +11,61 @@ import 'package:vybe/extensions/l10n.dart';
 import 'package:vybe/main.dart';
 import 'package:vybe/services/cloud_sync_service.dart';
 import 'package:vybe/services/common_services.dart';
+import 'package:vybe/services/followed_artists_service.dart';
+import 'package:vybe/services/home_feed_service.dart';
+import 'package:vybe/services/home_playback_history.dart';
 import 'package:vybe/services/listening_stats_service.dart';
 import 'package:vybe/services/playlist_download_service.dart';
 import 'package:vybe/services/playlists_manager.dart';
-import 'package:vybe/services/recommendation_service.dart';
 import 'package:vybe/services/router_service.dart';
 import 'package:vybe/services/settings_manager.dart';
 import 'package:vybe/utilities/account_name.dart';
 import 'package:vybe/utilities/app_utils.dart';
-import 'package:vybe/utilities/async_loader.dart';
+import 'package:vybe/utilities/flutter_toast.dart';
 import 'package:vybe/utilities/listening_stats_utils.dart';
 import 'package:vybe/widgets/auth_dialog.dart';
 import 'package:vybe/widgets/home_playlist_grid.dart';
 import 'package:vybe/widgets/listening_recap_card.dart';
 import 'package:vybe/widgets/mini_player_bottom_space.dart';
-import 'package:vybe/widgets/recommended_songs_section.dart';
+import 'package:vybe/widgets/playlist_artwork.dart';
 import 'package:vybe/widgets/section_header.dart';
 import 'package:vybe/widgets/shelf_card.dart';
 import 'package:vybe/widgets/spotify_header.dart';
 
 class HomePage extends StatefulWidget {
-  const HomePage({super.key});
+  const HomePage({super.key, this.feedService});
+
+  final HomeFeedService? feedService;
 
   @override
   _HomePageState createState() => _HomePageState();
 }
 
 class _HomePageState extends State<HomePage> {
-  late Future<List> _suggestedPlaylistsFuture;
-  late Future<List> _trendingArtistsFuture;
-  late Future<List> _recommendedSongsFuture;
+  late Future<List<HomeShelf>> _feed;
   Timer? _recentlyPlayedDebounce;
+  Timer? _onlineFeedRefresh;
+  late final AppLifecycleListener _appLifecycle;
+  int _playRequest = 0;
+  final _followed = FollowedArtistsService.instance.followedArtists;
+  final _country = PlatformDispatcher.instance.locale.countryCode ?? 'IN';
+  HomeFeedService get _feedService =>
+      widget.feedService ?? HomeFeedService.instance;
 
   @override
   void initState() {
     super.initState();
-    _suggestedPlaylistsFuture =
-        RecommendationService.instance.getSuggestedPlaylists();
-    _trendingArtistsFuture =
-        RecommendationService.instance.getSuggestedArtists();
-    _recommendedSongsFuture =
-        RecommendationService.instance.getRecommendedSongs();
-    externalRecommendations.addListener(_refreshAllRecommendations);
-    userRecentlyPlayed.addListener(_onRecentlyPlayedChanged);
+    _feed = _feedService.load(_country);
+    _appLifecycle = AppLifecycleListener(onResume: _refreshFeed);
+    _onlineFeedRefresh = Timer.periodic(const Duration(minutes: 30), (_) {
+      if (WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
+        _refreshFeed();
+      }
+    });
+    externalRecommendations.addListener(_refreshFeed);
+    userRecentlyPlayed.addListener(_scheduleFeedRefresh);
+    userLikedSongsList.addListener(_scheduleFeedRefresh);
+    _followed.addListener(_refreshFeed);
     CloudSyncService.instance.currentUser.addListener(_onAuthChanged);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -69,12 +83,12 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
-  void _onRecentlyPlayedChanged() {
+  void _scheduleFeedRefresh() {
     if (!mounted) return;
     _recentlyPlayedDebounce?.cancel();
     _recentlyPlayedDebounce = Timer(const Duration(seconds: 2), () {
       if (!mounted) return;
-      _refreshAllRecommendations();
+      _refreshFeed();
     });
   }
 
@@ -88,22 +102,32 @@ class _HomePageState extends State<HomePage> {
   @override
   void dispose() {
     _recentlyPlayedDebounce?.cancel();
-    userRecentlyPlayed.removeListener(_onRecentlyPlayedChanged);
+    _onlineFeedRefresh?.cancel();
+    _appLifecycle.dispose();
+    userRecentlyPlayed.removeListener(_scheduleFeedRefresh);
+    userLikedSongsList.removeListener(_scheduleFeedRefresh);
+    _followed.removeListener(_refreshFeed);
     CloudSyncService.instance.currentUser.removeListener(_onAuthChanged);
-    externalRecommendations.removeListener(_refreshAllRecommendations);
+    externalRecommendations.removeListener(_refreshFeed);
     super.dispose();
   }
 
-  void _refreshAllRecommendations() {
-    if (!mounted) return;
+  void _refreshFeed() {
+    if (!mounted || offlineMode.value) return;
+    final pending = _feedService.load(_country);
+    if (identical(pending, _feed)) return;
     setState(() {
-      _suggestedPlaylistsFuture =
-          RecommendationService.instance.getSuggestedPlaylists(forceRefresh: true);
-      _trendingArtistsFuture =
-          RecommendationService.instance.getSuggestedArtists(forceRefresh: true);
-      _recommendedSongsFuture =
-          RecommendationService.instance.getRecommendedSongs();
+      _feed = pending;
     });
+  }
+
+  Future<void> _refreshFromGesture() async {
+    if (!mounted || offlineMode.value) return;
+    final pending = _feedService.load(_country, forceRefresh: true);
+    setState(() {
+      _feed = pending;
+    });
+    await pending;
   }
 
   /// 0 = everything, 1 = playlists only, 2 = songs only.
@@ -174,19 +198,7 @@ class _HomePageState extends State<HomePage> {
           ),
         ),
       ),
-      body: SingleChildScrollView(
-        padding: commonSingleChildScrollViewPadding,
-        child: Column(
-          children: [
-            if (_filter != 2) _buildQuickAccessGrid(),
-            if (_filter != 2) _buildSuggestedPlaylists(),
-            if (_filter != 2) _buildTrendingArtists(),
-            if (_filter == 0) _buildCurrentMonthRecapSection(),
-            if (_filter != 1) _buildRecommendedSongsSection(),
-            const MiniPlayerBottomSpace(),
-          ],
-        ),
-      ),
+      body: _buildPersonalizedFeed(),
     );
   }
 
@@ -225,95 +237,289 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _buildSuggestedPlaylists() {
-    return AsyncLoader<List<dynamic>>(
-      future: _suggestedPlaylistsFuture,
-      builder: (context, playlists) {
-        if (playlists.isEmpty) return const SizedBox.shrink();
-
-        const cardSize = 150.0;
-        final itemCount = playlists.length.clamp(0, recommendedCubesNumber);
-
-        return Column(
-          children: [
-            SectionHeader(title: context.l10n!.suggestedPlaylists),
-            SizedBox(
-              height: cardSize + 56,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                itemCount: itemCount,
-                separatorBuilder: (_, __) => const SizedBox(width: 12),
-                itemBuilder: (context, index) {
-                  final playlist = playlists[index];
-                  return ShelfCard(
-                    playlist: playlist,
-                    onTap: () {
-                      final id = Uri.encodeComponent(
-                        playlist['ytid'].toString().trim(),
-                      );
-                      if (isArtistPlaylist(playlist)) {
-                        context.push('/home/artist/$id', extra: playlist);
-                      } else {
-                        context.push('/home/playlist/$id');
-                      }
-                    },
-                  );
-                },
-              ),
-            ),
-          ],
+  Widget _buildJumpBackIn() {
+    return AnimatedBuilder(
+      animation: Listenable.merge([
+        userRecentlyPlayed,
+        HomePlaybackHistory.changed,
+        userCustomPlaylists,
+        userPlaylistFolders,
+        offlinePlaylistService.offlinePlaylists,
+      ]),
+      builder: (context, _) {
+        final livePlaylists = {
+          for (final playlist in [
+            ...getUserCustomPlaylists(),
+            for (final folder in userPlaylistFolders.value)
+              ...(folder['playlists'] as List? ?? const []).whereType<Map>(),
+            ...offlinePlaylistService.offlinePlaylists.value.whereType<Map>(),
+          ])
+            homeItemId(playlist): playlist,
+        };
+        final collections = [
+          for (final entry in HomePlaybackHistory.collections.where(
+            (item) =>
+                !homeItemId(item).startsWith('customId-') ||
+                livePlaylists.containsKey(homeItemId(item)),
+          ))
+            if (entry['isAlbum'] == true
+                    ? null
+                    : livePlaylists[homeItemId(entry)]
+                case final playlist?)
+              {...entry, ...playlist, 'image': playlist['image']}
+            else
+              entry,
+        ];
+        return _buildShelf(
+          HomeFeedService.jumpBackIn(userRecentlyPlayed.value, collections),
+          resume: true,
         );
       },
     );
   }
 
-  Widget _buildTrendingArtists() {
-    return AsyncLoader<List<dynamic>>(
-      future: _trendingArtistsFuture,
-      builder: (context, artists) {
-        if (artists.isEmpty) return const SizedBox.shrink();
-
-        const cardSize = 120.0;
-        final itemCount = artists.length.clamp(0, 15);
-
-        return Column(
-          children: [
-            SectionHeader(title: context.l10n!.suggestedArtists),
-            SizedBox(
-              height: cardSize + 56,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                itemCount: itemCount,
-                separatorBuilder: (_, __) => const SizedBox(width: 12),
-                itemBuilder: (context, index) {
-                  final artist = artists[index];
-                  return ShelfCard(
-                    playlist: artist,
-                    size: cardSize,
-                    onTap: () {
-                      final id = Uri.encodeComponent(
-                        artist['ytid'].toString().trim(),
-                      );
-                      context.push('/home/artist/$id', extra: artist);
-                    },
-                  );
-                },
-              ),
-            ),
-          ],
+  Widget _buildPersonalizedFeed() {
+    return FutureBuilder<List<HomeShelf>>(
+      future: _feed,
+      builder: (context, snapshot) {
+        final loading =
+            !snapshot.hasData &&
+            snapshot.connectionState != ConnectionState.done;
+        return RefreshIndicator(
+          onRefresh: _refreshFromGesture,
+          child: ListView(
+            key: const PageStorageKey('personalized-home'),
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: commonSingleChildScrollViewPadding,
+            children: [
+              if (_filter != 2) _buildQuickAccessGrid(),
+              _buildJumpBackIn(),
+              if (loading)
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: LinearProgressIndicator(
+                    semanticsLabel: context.l10n!.loading,
+                  ),
+                ),
+              for (final shelf in snapshot.data ?? <HomeShelf>[])
+                _buildShelf(shelf),
+              if (_filter == 0) _buildCurrentMonthRecapSection(),
+              const MiniPlayerBottomSpace(),
+            ],
+          ),
         );
       },
     );
   }
 
-  Widget _buildRecommendedSongsSection() {
-    return AsyncLoader<List<dynamic>>(
-      future: _recommendedSongsFuture,
-      builder: (context, data) {
-        if (data.isEmpty) return const SizedBox.shrink();
-        return _buildRecommendedForYouSection(context, data);
-      },
+  Widget _buildShelf(HomeShelf shelf, {bool resume = false}) {
+    final items = shelf.items
+        .where(
+          (item) => switch (_filter) {
+            1 => item.kind != HomeItemKind.song,
+            2 => item.kind == HomeItemKind.song,
+            _ => true,
+          },
+        )
+        .toList();
+    if (items.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SectionHeader(title: shelf.title),
+          if (shelf.subtitle case final subtitle?)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Text(
+                subtitle,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              const gap = 12.0;
+              const minCardSize = 96.0;
+              const maxCardSize = 128.0;
+              final columns = math.max(
+                1,
+                ((constraints.maxWidth + gap) / (minCardSize + gap)).floor(),
+              );
+              final cardSize = math.min(
+                maxCardSize,
+                (constraints.maxWidth - gap * (columns - 1)) / columns,
+              );
+              final labelHeight = math.max(
+                56,
+                MediaQuery.textScalerOf(context).scale(14) +
+                    MediaQuery.textScalerOf(context).scale(12) +
+                    24,
+              );
+              return SizedBox(
+                height: cardSize + labelHeight,
+                child: PageView.builder(
+                  key: PageStorageKey((shelf.title, _filter, columns)),
+                  itemCount: (items.length + columns - 1) ~/ columns,
+                  itemBuilder: (context, page) {
+                    final start = page * columns;
+                    final end = math.min(start + columns, items.length);
+                    return Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        for (var index = start; index < end; index++) ...[
+                          if (index != start) const SizedBox(width: gap),
+                          _buildShelfCard(
+                            items[index],
+                            cardSize,
+                            resume: resume,
+                          ),
+                        ],
+                      ],
+                    );
+                  },
+                ),
+              );
+            },
+          ),
+        ],
+      ),
     );
+  }
+
+  Widget _buildShelfCard(HomeItem item, double size, {required bool resume}) {
+    final data = item.data;
+    final collection =
+        item.kind == HomeItemKind.album || item.kind == HomeItemKind.playlist;
+    final artist = (data['artist'] ?? data['author'])?.toString();
+    final year = data['year']?.toString();
+    final subtitle = [
+      if (artist != null && artist.isNotEmpty) artist,
+      if (year != null && year.isNotEmpty) year,
+    ].join(' \u00b7 ');
+    return ShelfCard(
+      key: ValueKey((item.kind, homeItemId(data))),
+      playlist: item.kind == HomeItemKind.artist
+          ? {...data, 'isArtist': true}
+          : data,
+      size: size,
+      artwork: item.kind == HomeItemKind.song
+          ? _buildSongArtwork(data, size)
+          : null,
+      subtitle: subtitle.isNotEmpty
+          ? subtitle
+          : item.kind == HomeItemKind.song
+          ? context.l10n!.songs
+          : null,
+      onTap: () => _activate(item, resume: resume),
+      onOpen: resume && collection ? () => _open(item) : null,
+    );
+  }
+
+  Widget _buildSongArtwork(Map song, double size) {
+    final original =
+        [
+              song['artworkPath'],
+              song['artWorkPath'],
+              song['image'],
+              song['highResImage'],
+              song['lowResImage'],
+            ]
+            .whereType<String>()
+            .map((value) => value.trim())
+            .firstWhere(
+              (value) => value.isNotEmpty && value != 'null',
+              orElse: () => '',
+            );
+    final uri = Uri.tryParse(original);
+    final parts = uri?.pathSegments ?? const <String>[];
+    // YouTube's 4:3 SD/HQ thumbnails often contain black padding. The wide
+    // thumbnail lets BoxFit.cover crop straight to the actual video image.
+    final wide =
+        uri != null &&
+            (uri.host == 'i.ytimg.com' || uri.host == 'img.youtube.com') &&
+            parts.length == 3 &&
+            (parts.first == 'vi' || parts.first == 'vi_webp') &&
+            const {
+              'default',
+              'hqdefault',
+              'sddefault',
+              'maxresdefault',
+            }.contains(parts.last.split('.').first)
+        ? uri
+              .replace(pathSegments: ['vi', parts[1], 'mqdefault.jpg'])
+              .toString()
+        : original;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(4),
+      child: PlaylistArtwork(
+        playlistArtwork: wide,
+        size: size,
+        fallback: wide == original
+            ? null
+            : PlaylistArtwork(playlistArtwork: original, size: size),
+      ),
+    );
+  }
+
+  void _open(HomeItem item) {
+    _playRequest++;
+    final id = homeItemId(item.data);
+    switch (item.kind) {
+      case HomeItemKind.artist:
+        context.push(
+          NavigationManager.artistPath(context, id),
+          extra: item.data,
+        );
+      case HomeItemKind.album:
+        context.push(NavigationManager.albumPath(context, id));
+      case HomeItemKind.playlist:
+        context.push(NavigationManager.playlistPath(id));
+      case HomeItemKind.song:
+      case HomeItemKind.mix:
+        break;
+    }
+  }
+
+  Future<void> _activate(HomeItem item, {required bool resume}) async {
+    final request = ++_playRequest;
+    final id = homeItemId(item.data);
+    switch (item.kind) {
+      case HomeItemKind.song:
+        if (resume &&
+            audioHandler.isCurrentSongLoaded &&
+            homeItemId(audioHandler.currentSong ?? {}) == id) {
+          await audioHandler.play();
+        } else {
+          await audioHandler.playResumableSong(item.data);
+        }
+      case HomeItemKind.mix:
+        await audioHandler.playPlaylistSong(playlist: item.data, songIndex: 0);
+      case HomeItemKind.artist:
+        _open(item);
+      case HomeItemKind.album:
+      case HomeItemKind.playlist:
+        if (!resume) {
+          _open(item);
+          return;
+        }
+        final collection = await getPlaylistInfoForWidget(id);
+        if (!mounted || request != _playRequest) return;
+        final tracks = collection?['list'];
+        if (tracks is! List || tracks.isEmpty) {
+          showToast(context, context.l10n!.error);
+          return;
+        }
+        final songId = item.data['songId']?.toString();
+        final index = tracks.indexWhere(
+          (track) => track is Map && homeItemId(track) == songId,
+        );
+        await audioHandler.playPlaylistSong(
+          playlist: collection,
+          songIndex: index < 0 ? 0 : index,
+          shuffle: false,
+        );
+    }
   }
 
   Widget _buildCurrentMonthRecapSection() {
@@ -373,17 +579,6 @@ class _HomePageState extends State<HomePage> {
     await audioHandler.playPlaylistSong(
       playlist: {'title': context.l10n!.timeMachine, 'list': songs},
       songIndex: index,
-    );
-  }
-
-  Widget _buildRecommendedForYouSection(
-    BuildContext context,
-    List<dynamic> data,
-  ) {
-    return RecommendedSongsSection(
-      title: context.l10n!.recommendedForYou,
-      songs: data,
-      listKeyPrefix: 'home_recommended',
     );
   }
 }

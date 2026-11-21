@@ -13,6 +13,7 @@ import 'package:vybe/models/position_data.dart';
 import 'package:vybe/services/audio_service_android_auto.dart';
 import 'package:vybe/services/common_services.dart';
 import 'package:vybe/services/data_manager.dart';
+import 'package:vybe/services/home_playback_history.dart';
 import 'package:vybe/services/io_service.dart';
 import 'package:vybe/services/listening_stats_service.dart';
 import 'package:vybe/services/settings_manager.dart';
@@ -32,7 +33,7 @@ typedef RemoteCommandSink = void Function(
 });
 
 class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
-  VybeAudioHandler() {
+  VybeAudioHandler({this.findSimilarSong = getSimilarSong}) {
     // Two identical players: only one is "active" at a time and every
     // existing code path goes through [audioPlayer], which returns it. The
     // other one stays idle and is used only to pre-load the next song for a
@@ -63,6 +64,15 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
 
     _initialize();
   }
+
+  final Future<Map<String, dynamic>?> Function(
+    String, {
+    Set<String> excludedYtIds,
+  })
+  findSimilarSong;
+
+  Future<Map?>? _autoplayCandidate;
+  int? _autoplayCandidateTransition;
 
   AudioPlayer _createPlayer() {
     final androidEqualizer = Platform.isAndroid ? AndroidEqualizer() : null;
@@ -280,11 +290,16 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
       _hasCurrentQueueIndex &&
       (hasNext ||
           repeatNotifier.value == AudioServiceRepeatMode.all ||
-          (playNextSongAutomatically.value &&
-              audioPlayer.playing &&
-              !offlineMode.value &&
-              repeatNotifier.value == AudioServiceRepeatMode.none &&
-              _currentLoadingIndex == -1));
+          _canUseAutoplay);
+
+  bool get _canUseAutoplay =>
+      playNextSongAutomatically.value &&
+      !offlineMode.value &&
+      !isFollowingRemote &&
+      !sleepTimerExpired &&
+      repeatNotifier.value == AudioServiceRepeatMode.none &&
+      isCurrentSongLoaded &&
+      currentSong?['isLive'] != true;
 
   List<MediaControl> _controls(bool playing) {
     final hasMultipleTracks = _queueList.length > 1;
@@ -857,6 +872,7 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
       final playerProcessingState = audioPlayer.processingState;
       final isPlaying =
           audioPlayer.playing &&
+          playerProcessingState != ProcessingState.idle &&
           playerProcessingState != ProcessingState.completed;
       final currentState = playbackState.valueOrNull;
       final newProcessingState =
@@ -1050,62 +1066,74 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
     }
   }
 
-  /// Queues one similar song when the current song is the last of the queue.
-  Future<void> _backgroundAddSongsToQueue() async {
-    // Repeat modes keep the queue cycling, so extending it would corrupt it.
-    if (offlineMode.value ||
-        hasNext ||
-        repeatNotifier.value != AudioServiceRepeatMode.none) {
-      return;
+  /// Prepares a suggestion outside the queue until playback advances.
+  Future<Map?>? _prepareAutoplay() {
+    if (!_canUseAutoplay || hasNext) return null;
+    final id = currentSong?['ytid']?.toString();
+    if (id == null || id.isEmpty) return null;
+
+    final transition = _songTransitionCounter;
+    if (_autoplayCandidateTransition == transition &&
+        _autoplayCandidate != null) {
+      return _autoplayCandidate;
     }
 
-    final baseYtid = _getCurrentSongForRecommendations()?['ytid']?.toString();
-    if (baseYtid == null || baseYtid.isEmpty) return;
+    final excluded = {
+      id,
+      for (final song in [..._queueList, ..._historyList])
+        if (song['ytid'] != null) song['ytid'].toString(),
+    };
+    _autoplayCandidateTransition = transition;
+    return _autoplayCandidate = _findAutoplayCandidate(id, excluded);
+  }
 
+  Future<Map?> _findAutoplayCandidate(String id, Set<String> excluded) async {
     try {
-      final knownYtids = <String>{};
-      for (final song in _queueList) {
-        if (song['ytid'] != null) knownYtids.add(song['ytid'].toString());
-      }
-      for (final song in _historyList) {
-        if (song['ytid'] != null) knownYtids.add(song['ytid'].toString());
-      }
-
-      final recommended =
-          await getSimilarSong(baseYtid, excludedYtIds: knownYtids).timeout(
-            const Duration(seconds: 10),
-            onTimeout: () {
-              logger.log('Background song fetch timed out');
-              return null;
-            },
-          );
-
-      // The user may have skipped, paused or extended the queue meanwhile.
-      final isStillRelevant =
-          audioPlayer.playing &&
-          !hasNext &&
-          _getCurrentSongForRecommendations()?['ytid']?.toString() == baseYtid;
-      if (recommended == null || !isStillRelevant) return;
-
-      await _insertRecommendedSong(recommended);
-    } catch (e, stackTrace) {
+      return await findSimilarSong(
+        id,
+        excludedYtIds: excluded,
+      ).timeout(const Duration(seconds: 10));
+    } catch (error, stackTrace) {
       logger.log(
-        'Error in background song addition',
-        error: e,
+        'Could not prepare autoplay',
+        error: error,
         stackTrace: stackTrace,
       );
+      return null;
     }
   }
 
-  Map? _getCurrentSongForRecommendations() {
-    final currentMediaItem = mediaItem.valueOrNull;
+  Future<void> _advanceAutoplay({required bool playWhenReady}) async {
+    final pending = _prepareAutoplay();
+    if (pending == null) return;
+    final transition = _songTransitionCounter;
+    final recommendation = await pending;
 
-    if (currentMediaItem == null || currentMediaItem.id.isEmpty) {
-      logger.log('No current media item available');
-      return null;
+    // Discard old work after a pause, stop, or a newer song selection.
+    if (!identical(pending, _autoplayCandidate) ||
+        transition != _songTransitionCounter ||
+        !_canUseAutoplay) {
+      return;
+    }
+    _autoplayCandidate = null;
+    if (hasNext) {
+      await _playFromQueue(
+        _currentQueueIndex + 1,
+        playWhenReady: playWhenReady,
+      );
+      return;
     }
 
-    return mediaItemToMap(currentMediaItem);
+    final id = recommendation?['ytid']?.toString();
+    if (recommendation == null ||
+        id == null ||
+        id.isEmpty ||
+        _queueList.any((song) => song['ytid']?.toString() == id)) {
+      return;
+    }
+    final index = _queueList.length;
+    _insertSongToQueueInternal(recommendation, index, flagName: 'isAutoPicked');
+    await _playFromQueue(index, playWhenReady: playWhenReady);
   }
 
   void _addToHistory(Map song) {
@@ -1141,7 +1169,7 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
           ? (_currentQueueIndex + 1).clamp(0, _queueList.length)
           : _queueList.length;
 
-      final isFirstSong = await _insertSongToQueueInternal(
+      final isFirstSong = _insertSongToQueueInternal(
         song,
         insertIndex,
         flagName: 'isManuallyAdded',
@@ -1155,51 +1183,11 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
     }
   }
 
-  Future<void> _insertRecommendedSong(Map song) async {
-    try {
-      if (song['ytid'] == null || song['ytid'].toString().isEmpty) {
-        logger.log('Invalid recommended song data for queue');
-        return;
-      }
-
-      final insertIndex = _queueList.length;
-
-      // Check BEFORE insertion: is the current song the last in queue?
-      final isCurrentSongAtEnd =
-          _queueList.isNotEmpty && _currentQueueIndex == _queueList.length - 1;
-
-      final isFirstSong = await _insertSongToQueueInternal(
-        song,
-        insertIndex,
-        flagName: 'isAutoPicked',
-      );
-
-      final shouldPlayInsertedSong =
-          playNextSongAutomatically.value &&
-          !sleepTimerExpired &&
-          _currentLoadingIndex == -1 &&
-          audioPlayer.processingState == ProcessingState.completed &&
-          isCurrentSongAtEnd;
-
-      if (shouldPlayInsertedSong) {
-        await _playFromQueue(insertIndex);
-      } else if (isFirstSong) {
-        await _playFromQueue(0);
-      }
-    } catch (e, stackTrace) {
-      logger.log(
-        'Error inserting recommended song',
-        error: e,
-        stackTrace: stackTrace,
-      );
-    }
-  }
-
-  Future<bool> _insertSongToQueueInternal(
+  bool _insertSongToQueueInternal(
     Map song,
     int insertIndex, {
     required String flagName,
-  }) async {
+  }) {
     final queueSong = _queueEntryIds.createSong(song);
     queueSong[flagName] = true;
     _queueList.insert(insertIndex, queueSong);
@@ -1635,6 +1623,10 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
 
     Future.microtask(() async {
       try {
+        if (audioPlayer.playing) {
+          final candidate = _prepareAutoplay();
+          if (candidate != null) unawaited(candidate);
+        }
         final songsToPreload = <Map>[];
 
         for (var i = 1; i <= _queueLookahead; i++) {
@@ -1945,6 +1937,7 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
   }
 
   Future<void> _pauseLocal() async {
+    _autoplayCandidate = null;
     if (_currentLoadingIndex >= 0) {
       _queuePlayWhenReady = false;
       return;
@@ -1976,6 +1969,7 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
 
   @override
   Future<void> stop() async {
+    _autoplayCandidate = null;
     // A guest stopping playback (notification, sleep timer, swiping the app
     // away) leaves the session.
     final onFollowerStopped = _onRemoteFollowerStopped;
@@ -1997,6 +1991,7 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
       );
       await audioPlayer.stop();
       _resetPreloadingState();
+      _updatePlaybackState(force: true);
     } catch (e, stackTrace) {
       logger.log('Error in stop()', error: e, stackTrace: stackTrace);
     }
@@ -2015,6 +2010,7 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
   }
 
   void _resetPreloadingState() {
+    _autoplayCandidate = null;
     _activePreloadCount = 0;
     _preloadingYtIds.clear();
     _preloadedYtIds.clear();
@@ -2152,16 +2148,23 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
 
       _lastError = null;
       if (transitionId == null) _emitLoadingState();
-      await _pauseForTrackChange();
-      if (_isStaleTransition(transitionId)) return false;
-
       final ytid = songData['ytid']?.toString();
-      final sponsorBlockFuture =
-          (sponsorBlockSupport.value && !_syncSessionActive && ytid != null)
-          ? getSkipSegments(ytid)
-          : Future.value(<Map<String, int>>[]);
-
-      final playback = await _resolvePlaybackSource(songData);
+      Future<List<Map<String, int>>>? sponsorBlockFuture;
+      // Locate the stream while the previous source is pausing. The player
+      // must still finish pausing before it can load the new source.
+      final (_, playback) = await (
+        _pauseForTrackChange(),
+        _resolvePlaybackSource(
+          songData,
+          onOnline: () {
+            if (sponsorBlockSupport.value &&
+                !_syncSessionActive &&
+                ytid != null) {
+              sponsorBlockFuture = getSkipSegments(ytid);
+            }
+          },
+        ),
+      ).wait;
 
       // Abort if a newer song was requested while we were fetching the stream URL.
       // This is the primary guard against the race condition where a slow streaming
@@ -2178,7 +2181,9 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
         return false;
       }
 
-      final skipSegments = await sponsorBlockFuture;
+      // Offline playback uses locally cached skip segments in buildAudioSource.
+      final skipSegments =
+          await sponsorBlockFuture ?? const <Map<String, int>>[];
 
       final audioSource = await buildAudioSource(
         songData,
@@ -2204,7 +2209,6 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
       return await _setAudioSourceAndPlay(
         songData,
         audioSource,
-        playback.songUrl,
         playback.isOffline,
         mediaId: mediaId,
         transitionId: transitionId,
@@ -2218,7 +2222,10 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
     }
   }
 
-  Future<_PlaybackSource?> _resolvePlaybackSource(Map songData) async {
+  Future<_PlaybackSource?> _resolvePlaybackSource(
+    Map songData, {
+    void Function()? onOnline,
+  }) async {
     final isOffline = await _resolveOfflineAndSetPaths(songData);
     if (!isOffline && offlineMode.value) {
       logger.log(
@@ -2227,6 +2234,7 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
       return null;
     }
 
+    if (!isOffline) onOnline?.call();
     final songUrl = await _getPlaybackUrl(songData, isOffline);
 
     if (songUrl == null || songUrl.isEmpty) {
@@ -2255,6 +2263,7 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
         'Offline file missing for ${songData['ytid']}, switching to online',
       );
 
+      onOnline?.call();
       final onlineUrl = await fetchSongStreamUrl(
         songData['ytid'],
         songData['isLive'] ?? false,
@@ -2324,7 +2333,6 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
   Future<bool> _setAudioSourceAndPlay(
     Map song,
     AudioSource audioSource,
-    String songUrl,
     bool isOffline, {
     String? mediaId,
     bool allowOnlineRetry = true,
@@ -2408,12 +2416,6 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
         );
       unawaited(updateRecentlyPlayed(song['ytid'], songFallback: song));
 
-      if (!isOffline) {
-        final cacheKey =
-            'song_${song['ytid']}_${audioQualitySetting.value}_url';
-        unawaited(addOrUpdateData<String>('cache', cacheKey, songUrl));
-      }
-
       _updatePlaybackState();
 
       Future.delayed(const Duration(seconds: 2), _preloadUpcomingSongs);
@@ -2486,7 +2488,6 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
     return _setAudioSourceAndPlay(
       song,
       freshSource,
-      freshUrl,
       false,
       mediaId: mediaId,
       allowOnlineRetry: false,
@@ -2521,12 +2522,24 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
   }) async {
     try {
       if (playlist != null && playlist['list'] != null) {
+        final songs = List<Map>.from(playlist['list']);
         await addPlaylistToQueue(
-          List<Map>.from(playlist['list']),
+          songs,
           replace: true,
           startIndex: songIndex,
           shuffle: shuffle,
         );
+        if (!isFollowingRemote &&
+            isCurrentSongLoaded &&
+            songIndex >= 0 &&
+            songIndex < songs.length) {
+          final selected = songs[songIndex];
+          final selectedId = selected['ytid'] ?? selected['id'];
+          if (selectedId != null &&
+              currentSong?['ytid']?.toString() == selectedId.toString()) {
+            unawaited(HomePlaybackHistory.record(playlist, selected));
+          }
+        }
       }
     } catch (e, stackTrace) {
       logger.log('Error playing playlist', error: e, stackTrace: stackTrace);
@@ -2773,8 +2786,7 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
         await _playFromQueue(0, playWhenReady: playWhenReady);
       } else if (playNextSongAutomatically.value &&
           _currentLoadingIndex == -1) {
-        // At end of queue with auto-play enabled - trigger background fetch
-        unawaited(_backgroundAddSongsToQueue());
+        await _advanceAutoplay(playWhenReady: playWhenReady);
       } else {
         if (audioPlayer.processingState != ProcessingState.completed) {
           await stop();
@@ -3368,8 +3380,6 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
         key: target.key,
         player: standby,
         song: songData,
-        songUrl: playback.songUrl,
-        isOffline: playback.isOffline,
       );
     } catch (e, stackTrace) {
       if (token != _crossfadeToken) return; // Cancelled meanwhile.
@@ -3454,10 +3464,6 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
           incoming.playing && incoming.processingState == ProcessingState.ready,
     );
     unawaited(updateRecentlyPlayed(song['ytid'], songFallback: song));
-    if (!prepared.isOffline) {
-      final cacheKey = 'song_${song['ytid']}_${audioQualitySetting.value}_url';
-      unawaited(addOrUpdateData<String>('cache', cacheKey, prepared.songUrl));
-    }
 
     _consecutiveErrors = 0;
     _updatePlaybackState(force: true);
@@ -3558,14 +3564,10 @@ class _PreparedCrossfade {
     required this.key,
     required this.player,
     required this.song,
-    required this.songUrl,
-    required this.isOffline,
   });
 
   final int token;
   final String key;
   final AudioPlayer player;
   final Map song;
-  final String songUrl;
-  final bool isOffline;
 }

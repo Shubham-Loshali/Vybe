@@ -216,11 +216,9 @@ class PlaylistBar extends StatelessWidget {
                             CollaborativePlaylistService.instance
                                 .makePlaylistCollaborative(pId)
                                 .then((res) {
-                                  if (res.success && context.mounted) {
-                                    showToast(
-                                      context,
-                                      'Playlist is now collaborative!',
-                                    );
+                                  if (!context.mounted) return;
+                                  showToast(context, res.message);
+                                  if (res.success) {
                                     final match = storedCustomPlaylists
                                         .firstWhere(
                                           (p) =>

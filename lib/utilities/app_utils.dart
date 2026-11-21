@@ -97,8 +97,9 @@ String formatMonthPeriodLabel(Locale locale, String monthKey) {
 }
 
 AudioOnlyStreamInfo? selectAudioOnlyStreamForQuality(
-  List<AudioOnlyStreamInfo> availableSources,
-) {
+  List<AudioOnlyStreamInfo> availableSources, {
+  String? quality,
+}) {
   if (availableSources.isEmpty) return null;
 
   final compatibleSources = _filterCompatibleAudioOnlySources(availableSources);
@@ -108,7 +109,7 @@ AudioOnlyStreamInfo? selectAudioOnlyStreamForQuality(
             : List<AudioOnlyStreamInfo>.from(availableSources))
         ..sort((a, b) => b.bitrate.compareTo(a.bitrate));
 
-  final qualitySetting = audioQualitySetting.value;
+  final qualitySetting = quality ?? audioQualitySetting.value;
 
   if (qualitySetting == 'low') {
     return selectionPool.last;
@@ -142,12 +143,18 @@ int _audioOnlyCompatibilityScore(AudioOnlyStreamInfo stream) {
     return 0;
   }
 
-  if ((codec.contains('mp4a') || codec.contains('aac') || audioCodec.contains('mp4a') || audioCodec.contains('aac')) &&
+  if ((codec.contains('mp4a') ||
+          codec.contains('aac') ||
+          audioCodec.contains('mp4a') ||
+          audioCodec.contains('aac')) &&
       (container == 'mp4' || container == 'm4a')) {
     return 3;
   }
 
-  if (codec.contains('opus') || codec.contains('vorbis') || audioCodec.contains('opus') || audioCodec.contains('vorbis')) {
+  if (codec.contains('opus') ||
+      codec.contains('vorbis') ||
+      audioCodec.contains('opus') ||
+      audioCodec.contains('vorbis')) {
     return 2;
   }
 
