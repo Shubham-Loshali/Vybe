@@ -176,7 +176,8 @@ class _ImportSpotifyPlaylistPageState extends State<ImportSpotifyPlaylistPage> {
     if (!mounted) return;
     if (foundSongs.isNotEmpty) {
       final (_, playlistId) = createCustomPlaylist(playlistName, null, context);
-      addSongsInCustomPlaylist(context, playlistId, foundSongs);
+      await addSongsInCustomPlaylist(context, playlistId, foundSongs);
+      if (!mounted) return;
     }
 
     final resultText = rateLimited

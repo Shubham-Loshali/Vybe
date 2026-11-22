@@ -17,6 +17,7 @@ import 'package:vybe/services/listen_together_service.dart';
 import 'package:vybe/services/playlists_manager.dart';
 import 'package:vybe/theme/app_themes.dart';
 import 'package:vybe/utilities/collaborative_playlist_dialogs.dart';
+import 'package:vybe/utilities/playlist_dialogs.dart';
 import 'package:vybe/widgets/overflow_menu_button.dart';
 
 import '../support/test_account_user.dart';
@@ -37,6 +38,57 @@ void main() {
     await Hive.close();
     await directory.delete(recursive: true);
   });
+
+  testWidgets(
+    'Selecting the host playlist reports failure when the shared add cannot sync',
+    (tester) async {
+      final shared = {
+        'id': 'legacy-guest-playlist',
+        'collabId': 'ABC123',
+        'source': 'user-created',
+        'isCollaborative': true,
+        'ownerUid': 'host',
+        'title': 'Friend favorites',
+        'list': <Map>[],
+      };
+      final previous = userCustomPlaylists.value;
+      userCustomPlaylists.value = [shared];
+      addTearDown(() => userCustomPlaylists.value = previous);
+      final account = CloudSyncService.instance.currentUser;
+      final previousAccount = account.value;
+      account.value = TestAccountUser(uid: 'guest');
+      addTearDown(() => account.value = previousAccount);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: Scaffold(
+            body: Builder(
+              builder: (context) => TextButton(
+                onPressed: () => showAddToPlaylistDialog(
+                  context,
+                  song: {'ytid': 'guest-track', 'title': 'Guest contribution'},
+                ),
+                child: const Text('Pick a playlist'),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('Pick a playlist'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Friend favorites'));
+      await tester.pump(const Duration(milliseconds: 500));
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(
+        find.textContaining('Could not add to the shared playlist'),
+        findsOneWidget,
+      );
+      expect(find.text('Song added'), findsNothing);
+      expect(userCustomPlaylists.value.single['list'], isEmpty);
+    },
+  );
 
   testWidgets(
     'Library and playlist controls open the correct Jam and collaboration screens',

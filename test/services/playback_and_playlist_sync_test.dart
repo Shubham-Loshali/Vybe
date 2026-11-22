@@ -31,8 +31,14 @@ class _SharedSongAudioHandler extends Fake implements VybeAudioHandler {
 }
 
 void main() {
+  final sharedSongs = <String, List<Map>>{};
   final collaborative = CollaborativePlaylistService.withPublisher(
-    (_, __) async {},
+    (code, data) async => sharedSongs[code] = List<Map>.from(data['songs']),
+    editSongs: (code, edit) async {
+      final result = edit(sharedSongs[code]!);
+      sharedSongs[code] = result.songs;
+      return result;
+    },
   );
   TestWidgetsFlutterBinding.ensureInitialized();
   late Directory tempDir;
@@ -142,7 +148,7 @@ void main() {
         'image': 'https://example.com/art.jpg',
       };
 
-      final addResult = await CollaborativePlaylistService.instance.addSong(playlistId, songWithOnlyId);
+      final addResult = await collaborative.addSong(playlistId, songWithOnlyId);
       expect(addResult, isTrue);
 
       final playlist = userCustomPlaylists.value.firstWhere(
@@ -257,7 +263,7 @@ void main() {
         'title': 'Unique Song',
       };
 
-      final firstAdd = await CollaborativePlaylistService.instance.addSong(playlistId, song);
+      final firstAdd = await collaborative.addSong(playlistId, song);
       expect(firstAdd, isTrue);
 
       // Attempting to add the same song again with 'ytid' instead of 'id'
@@ -265,7 +271,7 @@ void main() {
         'ytid': 'unique_song_777',
         'title': 'Unique Song',
       };
-      final secondAdd = await CollaborativePlaylistService.instance.addSong(playlistId, duplicateSongWithYtid);
+      final secondAdd = await collaborative.addSong(playlistId, duplicateSongWithYtid);
       expect(secondAdd, isFalse);
 
       final playlist = userCustomPlaylists.value.firstWhere(

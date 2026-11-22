@@ -351,7 +351,7 @@ void showCreatePlaylistDialog(
 
                             if (songToAdd != null &&
                                 newPlaylistId.isNotEmpty) {
-                              final addResult = addSongInCustomPlaylist(
+                              final addResult = await addSongInCustomPlaylist(
                                 NavigationManager().context,
                                 newPlaylistId,
                                 songToAdd,
@@ -363,7 +363,7 @@ void showCreatePlaylistDialog(
                             } else if (songsToAdd != null &&
                                 songsToAdd.isNotEmpty &&
                                 newPlaylistId.isNotEmpty) {
-                              final addResult = addSongsInCustomPlaylist(
+                              final addResult = await addSongsInCustomPlaylist(
                                 NavigationManager().context,
                                 newPlaylistId,
                                 songsToAdd,
@@ -419,7 +419,7 @@ void showCreatePlaylistDialog(
 
                             if (songToAdd != null &&
                                 newPlaylistId.isNotEmpty) {
-                              final addResult = addSongInCustomPlaylist(
+                              final addResult = await addSongInCustomPlaylist(
                                 NavigationManager().context,
                                 newPlaylistId,
                                 songToAdd,
@@ -431,7 +431,7 @@ void showCreatePlaylistDialog(
                             } else if (songsToAdd != null &&
                                 songsToAdd.isNotEmpty &&
                                 newPlaylistId.isNotEmpty) {
-                              final addResult = addSongsInCustomPlaylist(
+                              final addResult = await addSongsInCustomPlaylist(
                                 NavigationManager().context,
                                 newPlaylistId,
                                 songsToAdd,
@@ -462,13 +462,13 @@ void showCreatePlaylistDialog(
   );
 }
 
-void showAddToPlaylistDialog(
+Future<void> showAddToPlaylistDialog(
   BuildContext context, {
   dynamic song,
   List<dynamic>? songs,
-}) {
+}) async {
   final parentContext = context;
-  showDialog(
+  final target = await showDialog<Map>(
     context: parentContext,
     builder: (BuildContext dialogContext) {
       final colorScheme = Theme.of(dialogContext).colorScheme;
@@ -588,27 +588,7 @@ void showAddToPlaylistDialog(
                                 iconColor: colorScheme.tertiary,
                                 iconBgColor: colorScheme.tertiaryContainer,
                                 label: p['title'] ?? '',
-                                onTap: () {
-                                  final targetId =
-                                      (p['ytid'] ?? p['id'])?.toString() ?? '';
-                                  Navigator.of(dialogContext).pop();
-                                  if (song != null) {
-                                    final res = addSongInCustomPlaylist(
-                                      parentContext,
-                                      targetId,
-                                      song,
-                                    );
-                                    showToast(NavigationManager().context, res);
-                                  } else if (songs != null &&
-                                      songs.isNotEmpty) {
-                                    final res = addSongsInCustomPlaylist(
-                                      parentContext,
-                                      targetId,
-                                      songs,
-                                    );
-                                    showToast(NavigationManager().context, res);
-                                  }
-                                },
+                                onTap: () => Navigator.of(dialogContext).pop(p),
                               ),
                             ),
                         ],
@@ -626,27 +606,7 @@ void showAddToPlaylistDialog(
                       iconColor: colorScheme.tertiary,
                       iconBgColor: colorScheme.tertiaryContainer,
                       label: playlist['title'] ?? '',
-                      onTap: () {
-                        final targetId =
-                            (playlist['ytid'] ?? playlist['id'])?.toString() ??
-                                '';
-                        Navigator.of(dialogContext).pop();
-                        if (song != null) {
-                          final res = addSongInCustomPlaylist(
-                            parentContext,
-                            targetId,
-                            song,
-                          );
-                          showToast(NavigationManager().context, res);
-                        } else if (songs != null && songs.isNotEmpty) {
-                          final res = addSongsInCustomPlaylist(
-                            parentContext,
-                            targetId,
-                            songs,
-                          );
-                          showToast(NavigationManager().context, res);
-                        }
-                      },
+                      onTap: () => Navigator.of(dialogContext).pop(playlist),
                     ),
                   );
                 },
@@ -676,4 +636,20 @@ void showAddToPlaylistDialog(
       );
     },
   );
+  if (target == null || !parentContext.mounted) return;
+  if (song == null && (songs == null || songs.isEmpty)) return;
+
+  final targetId = (target['ytid'] ?? target['id'])?.toString() ?? '';
+  if (target['isCollaborative'] == true) {
+    showToast(
+      parentContext,
+      'Adding to the shared playlist…',
+      icon: FluentIcons.info_20_regular,
+      duration: const Duration(seconds: 8),
+    );
+  }
+  final result = song != null
+      ? await addSongInCustomPlaylist(parentContext, targetId, song)
+      : await addSongsInCustomPlaylist(parentContext, targetId, songs!);
+  if (parentContext.mounted) showToast(parentContext, result);
 }

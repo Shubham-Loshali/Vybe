@@ -684,7 +684,7 @@ class PlaylistBar extends StatelessWidget {
         return;
       }
 
-      showAddToPlaylistDialog(navContext, songs: tracks);
+      unawaited(showAddToPlaylistDialog(navContext, songs: tracks));
     } catch (e) {
       if (navContext.mounted) {
         Navigator.pop(navContext);

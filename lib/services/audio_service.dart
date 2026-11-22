@@ -180,6 +180,7 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
   bool _isUpdatingState = false;
   bool _pendingPlaybackStateUpdate = false;
   bool _pendingForcedPlaybackStateUpdate = false;
+  bool _mediaSessionStopped = false;
   int _songTransitionCounter = 0;
   Future<void>? _pausingForTrackChange;
   bool _queuePlayWhenReady = true;
@@ -857,7 +858,7 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
   }
 
   void _updatePlaybackState({bool force = false}) {
-    if (_currentLoadingIndex >= 0) return;
+    if (_mediaSessionStopped || _currentLoadingIndex >= 0) return;
     if (_isUpdatingState) {
       _pendingPlaybackStateUpdate = true;
       _pendingForcedPlaybackStateUpdate |= force;
@@ -947,6 +948,7 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
   }
 
   void _handleProcessingStateChange(ProcessingState state) {
+    if (_mediaSessionStopped) return;
     try {
       if (state == ProcessingState.completed) {
         if (_currentLoadingIndex >= 0) return;
@@ -1567,6 +1569,7 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
     }
 
     // Start new transition
+    _openMediaSession();
     _songTransitionCounter++;
     final currentTransitionId = _songTransitionCounter;
     _currentLoadingIndex = index;
@@ -1816,6 +1819,7 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
 
   @override
   void publishPreparedBrowserItem(MediaItem item) {
+    _openMediaSession();
     mediaItem.add(item);
     queue.add([item]);
     playbackState.add(
@@ -1838,7 +1842,12 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
   Future<List<MediaItem>> getChildren(
     String parentMediaId, [
     Map<String, dynamic>? options,
-  ]) => _androidAutoBrowser.children(parentMediaId);
+  ]) async {
+    if (_mediaSessionStopped && parentMediaId == AudioService.recentRootId) {
+      return const [];
+    }
+    return _androidAutoBrowser.children(parentMediaId);
+  }
 
   @override
   ValueStream<Map<String, dynamic>> subscribeToChildren(String parentMediaId) =>
@@ -1874,6 +1883,12 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
 
   // Audio service lifecycle
 
+  void _openMediaSession() {
+    if (!_mediaSessionStopped) return;
+    _mediaSessionStopped = false;
+    _androidAutoBrowser.notifyResumptionChanged();
+  }
+
   @override
   Future<void> onTaskRemoved() async {
     try {
@@ -1899,6 +1914,7 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
       _queuePlayWhenReady = true;
       return;
     }
+    _openMediaSession();
     _emitSyncEvent('play');
     try {
       if (audioPlayer.audioSource == null) {
@@ -1969,7 +1985,9 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
 
   @override
   Future<void> stop() async {
-    _autoplayCandidate = null;
+    _mediaSessionStopped = true;
+    _songTransitionCounter++;
+    _resetPreloadingState();
     // A guest stopping playback (notification, sleep timer, swiping the app
     // away) leaves the session.
     final onFollowerStopped = _onRemoteFollowerStopped;
@@ -1979,23 +1997,26 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
     }
     _debounceTimer?.cancel();
     _completionEventPending = false;
+    _completionHandlerLoadStarted = false;
     _currentLoadingIndex = -1;
     _currentLoadingTransitionId = -1;
+    _queuePlayWhenReady = false;
     _lastError = null;
     _consecutiveErrors = 0;
     _abortCrossfade();
+    // Publish idle without transport controls, even if the player takes time
+    // to unload. Android also queries the recent root when removing the card.
+    playbackState.add(PlaybackState());
+    _androidAutoBrowser.notifyResumptionChanged();
     try {
       listeningStatsService.finishListeningSession(
         countCurrentTick: true,
         wasPlaying: audioPlayer.playing,
       );
       await audioPlayer.stop();
-      _resetPreloadingState();
-      _updatePlaybackState(force: true);
     } catch (e, stackTrace) {
       logger.log('Error in stop()', error: e, stackTrace: stackTrace);
     }
-    await super.stop();
   }
 
   /// Returns unplayed manually added songs after the current queue index.

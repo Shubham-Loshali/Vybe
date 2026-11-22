@@ -231,12 +231,13 @@ Future<String> addUserPlaylist(String input, BuildContext context) async {
   return ('${context.l10n!.addedSuccess}!', newPlaylistId);
 }
 
-String addSongInCustomPlaylist(
+Future<String> addSongInCustomPlaylist(
   BuildContext context,
   String playlistId,
   Map song, {
   int? indexToInsert,
-}) {
+}) async {
+  final l10n = context.l10n!;
   final found = _findCustomPlaylist(playlistId);
   final customPlaylist = found?.playlist;
   final isFromFolder = found?.isFromFolder ?? false;
@@ -246,7 +247,19 @@ String addSongInCustomPlaylist(
     final songYtid = (song['ytid'] ?? song['id'])?.toString();
     if (songYtid == null || songYtid.isEmpty) {
       logger.log('Cannot add song without valid ytid or id');
-      return context.l10n!.error;
+      return l10n.error;
+    }
+    if (customPlaylist['isCollaborative'] == true) {
+      final count = await _addSongsToSharedPlaylist(
+        playlistId,
+        [song],
+        indexToInsert: indexToInsert,
+      );
+      return switch (count) {
+        null => _sharedPlaylistAddFailed,
+        0 => l10n.songAlreadyInPlaylist,
+        _ => l10n.songAdded,
+      };
     }
     if (song['ytid'] == null) {
       song['ytid'] = songYtid;
@@ -287,18 +300,6 @@ String addSongInCustomPlaylist(
 
     offlinePlaylistService.checkAndAutoMarkOffline(customPlaylist);
 
-    if (customPlaylist['isCollaborative'] == true) {
-      final code = customPlaylist['collabId'] ?? customPlaylist['inviteCode'];
-      if (code != null) {
-        unawaited(
-          CollaborativePlaylistService.instance.syncAddedSongs(
-            code.toString(),
-            [song],
-          ),
-        );
-      }
-    }
-
     return context.l10n!.songAdded;
   } else {
     logger.log('Custom playlist not found for ytid: $playlistId');
@@ -318,19 +319,32 @@ List<Map> getUserCustomPlaylists() {
   ];
 }
 
-String addSongsInCustomPlaylist(
+Future<String> addSongsInCustomPlaylist(
   BuildContext context,
   String playlistId,
   List<dynamic> songs,
-) {
+) async {
+  final l10n = context.l10n!;
   final found = _findCustomPlaylist(playlistId);
   final customPlaylist = found?.playlist;
   final isFromFolder = found?.isFromFolder ?? false;
 
   if (customPlaylist != null) {
+    if (customPlaylist['isCollaborative'] == true) {
+      final count = await _addSongsToSharedPlaylist(
+        playlistId,
+        songs.whereType<Map>(),
+      );
+      return switch (count) {
+        null => _sharedPlaylistAddFailed,
+        0 => l10n.songAlreadyInPlaylist,
+        _ => l10n.addedSuccess,
+      };
+    }
+
     final List<dynamic> playlistSongs = customPlaylist['list'];
 
-    final newSongs = <dynamic>[];
+    var added = false;
     for (final song in songs) {
       if (song is! Map) continue;
       final songYtid = (song['ytid'] ?? song['id'])?.toString();
@@ -345,20 +359,11 @@ String addSongsInCustomPlaylist(
       });
       if (!alreadyExists) {
         playlistSongs.add(song);
-        newSongs.add(song);
+        added = true;
       }
     }
 
-    if (newSongs.isNotEmpty) {
-      final code = customPlaylist['collabId'] ?? customPlaylist['inviteCode'];
-      if (customPlaylist['isCollaborative'] == true && code != null) {
-        unawaited(
-          CollaborativePlaylistService.instance.syncAddedSongs(
-            code.toString(),
-            newSongs.whereType<Map>(),
-          ),
-        );
-      }
+    if (added) {
       if (isFromFolder) {
         userPlaylistFolders.value = [...userPlaylistFolders.value];
         unawaited(
@@ -387,6 +392,26 @@ String addSongsInCustomPlaylist(
     logger.log('Custom playlist not found for ytid: $playlistId');
     return context.l10n!.error;
   }
+}
+
+const _sharedPlaylistAddFailed =
+    'Could not add to the shared playlist. Check your connection and try again.';
+
+Future<int?> _addSongsToSharedPlaylist(
+  String playlistId,
+  Iterable<Map> songs, {
+  int? indexToInsert,
+}) async {
+  final count = await CollaborativePlaylistService.instance.addSongs(
+    playlistId,
+    songs,
+    indexToInsert: indexToInsert,
+  );
+  final updated = _findCustomPlaylist(playlistId)?.playlist;
+  if (count != null && count > 0 && updated != null) {
+    offlinePlaylistService.checkAndAutoMarkOffline(updated);
+  }
+  return count;
 }
 
 bool removeSongFromPlaylist(
@@ -1206,14 +1231,15 @@ Map? updateStoredCustomPlaylist(String playlistId, Map changes) {
   if (normalizedId == null) return null;
 
   for (final playlist in userCustomPlaylists.value) {
-    if (_playlistId(playlist['ytid']) == normalizedId) {
+    if (_playlistId(playlist['ytid'] ?? playlist['id']) == normalizedId) {
       return (playlist: playlist, isFromFolder: false);
     }
   }
   for (final folder in userPlaylistFolders.value) {
     final folderPlaylists = folder['playlists'] as List<dynamic>? ?? [];
     for (final playlist in folderPlaylists) {
-      if (playlist is Map && _playlistId(playlist['ytid']) == normalizedId) {
+      if (playlist is Map &&
+          _playlistId(playlist['ytid'] ?? playlist['id']) == normalizedId) {
         return (playlist: playlist, isFromFolder: true);
       }
     }

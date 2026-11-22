@@ -209,7 +209,7 @@ Future<void> _handleSongMenuAction({
       await onRename?.call();
       break;
     case 'add_to_playlist':
-      showAddToPlaylistDialog(context, song: song);
+      await showAddToPlaylistDialog(context, song: song);
       break;
     case 'remove_from_recents':
       try {

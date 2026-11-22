@@ -72,6 +72,6 @@ class _PlaylistAddToPlaylistButtonState
       return;
     }
 
-    showAddToPlaylistDialog(context, songs: songs);
+    await showAddToPlaylistDialog(context, songs: songs);
   }
 }

@@ -343,6 +343,9 @@ class AndroidAutoBrowser {
     }
   }
 
+  void notifyResumptionChanged() =>
+      _notifyChildrenChanged(const [AudioService.recentRootId]);
+
   void setupMediaBrowserSubscriptions() {
     void watch(Listenable source, List<String> parents) {
       source.addListener(() => _notifyChildrenChanged(parents));

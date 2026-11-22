@@ -11,21 +11,36 @@ import 'package:vybe/services/cloud_sync_service.dart';
 import 'package:vybe/services/playlists_manager.dart';
 import 'package:vybe/utilities/playlist_utils.dart';
 
+typedef CollaborativeSongEdit = ({List<Map> songs, List<Map> added});
+
 class CollaborativePlaylistService {
   CollaborativePlaylistService._internal()
     : _writeArtwork = _writeFirestoreArtwork,
-      _publish = _publishFirestorePlaylist;
+      _publish = _publishFirestorePlaylist,
+      _editSongs = _editFirestoreSongs;
 
   @visibleForTesting
   CollaborativePlaylistService.withArtworkWriter(this._writeArtwork)
-    : _publish = _publishFirestorePlaylist;
+    : _publish = _publishFirestorePlaylist,
+      _editSongs = _editFirestoreSongs;
 
   @visibleForTesting
-  CollaborativePlaylistService.withPublisher(this._publish)
-    : _writeArtwork = _writeFirestoreArtwork;
+  CollaborativePlaylistService.withPublisher(
+    this._publish, {
+    Future<CollaborativeSongEdit> Function(
+      String code,
+      CollaborativeSongEdit Function(List<Map>) edit,
+    )? editSongs,
+  }) : _writeArtwork = _writeFirestoreArtwork,
+       _editSongs = editSongs ?? _editFirestoreSongs;
 
   final Future<void> Function(String code, Map<String, dynamic> data) _publish;
+  final Future<CollaborativeSongEdit> Function(
+    String code,
+    CollaborativeSongEdit Function(List<Map>) edit,
+  ) _editSongs;
   final _pendingConversions = <String>{};
+  final _pendingSongRemovals = <String, Future<void>>{};
 
   final Future<void> Function(String code, Map<String, dynamic> change)
   _writeArtwork;
@@ -471,84 +486,105 @@ class CollaborativePlaylistService {
         .firstOrNull;
   }
 
-  Map<String, dynamic> _attributeSong(
-    Map song,
-    String uid,
-    String name,
-    int now,
-  ) => {
-    ...Map<String, dynamic>.from(song),
-    'addedByUid': uid,
-    'addedByName': name,
-    'addedAt': now,
-  };
-
-  /// Publishes songs that the library has already added to its local copy.
-  Future<void> syncAddedSongs(String code, Iterable<Map> songs) async {
-    final uid = _currentUid();
-    final name = _displayName();
-    final now = DateTime.now().millisecondsSinceEpoch;
-    await _writeAddedSongs(
-      code,
-      songs.map((song) => _attributeSong(song, uid, name, now)).toList(),
-    );
-  }
-
-  Future<void> _writeAddedSongs(
+  static Future<CollaborativeSongEdit> _editFirestoreSongs(
     String code,
-    List<Map<String, dynamic>> songs,
-  ) async {
-    try {
-      await FirebaseFirestore.instance
-          .collection(_collectionName)
-          .doc(code)
-          .update({
-            'songs': FieldValue.arrayUnion(songs),
-            'updatedAt': FieldValue.serverTimestamp(),
-          })
-          .timeout(const Duration(seconds: 8));
-    } catch (error) {
-      logger.log('Collaborative addSong remote sync failed', error: error);
-    }
+    CollaborativeSongEdit Function(List<Map>) edit,
+  ) {
+    final firestore = FirebaseFirestore.instance;
+    final playlist = firestore.collection(_collectionName).doc(code);
+    return firestore.runTransaction((transaction) async {
+      final snapshot = await transaction.get(playlist);
+      if (!snapshot.exists) throw StateError('Shared playlist no longer exists');
+      final songs = (snapshot.data()?['songs'] as List? ?? []).whereType<Map>();
+      final result = edit(songs.toList());
+      if (result.added.isNotEmpty) {
+        transaction.update(playlist, {
+          'songs': result.songs,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+      }
+      return result;
+    }, timeout: const Duration(seconds: 8));
   }
 
   /// Adds a song to a collaborative playlist and syncs it in real time.
-  Future<bool> addSong(String collabCodeOrId, Map song) async {
+  Future<bool> addSong(String collabCodeOrId, Map song) async =>
+      (await addSongs(collabCodeOrId, [song]) ?? 0) > 0;
+
+  /// Returns the number of confirmed additions, or null if syncing failed.
+  Future<int?> addSongs(
+    String collabCodeOrId,
+    Iterable<Map> songs, {
+    int? indexToInsert,
+  }) async {
+    final playlist = _storedCollaborativePlaylist(collabCodeOrId);
+    final code = normaliseCode(
+      (playlist?['collabId'] ?? playlist?['inviteCode'] ?? collabCodeOrId)
+          .toString(),
+    );
+    if (code.length != codeLength) return null;
+
     final uid = _currentUid();
     final userName = _displayName();
     final now = DateTime.now().millisecondsSinceEpoch;
-
-    final stampedSong = _attributeSong(song, uid, userName, now);
-
-    // 1. Immediately update local state
-    final playlist = _storedCollaborativePlaylist(collabCodeOrId);
-    String? code;
-    if (playlist != null) {
-      code = (playlist['collabId'] ?? playlist['inviteCode'])?.toString();
-      final list = List<dynamic>.from(playlist['list'] as List? ?? []);
-
-      final targetYtid = (song['ytid'] ?? song['id'])?.toString();
-      if (list.any(
-        (s) =>
-            s is Map &&
-            targetYtid != null &&
-            (s['ytid'] ?? s['id'])?.toString() == targetYtid,
-      )) {
-        return false; // Already present
-      }
-
-      list.add(stampedSong);
-      updateStoredCustomPlaylist(
-        (playlist['ytid'] ?? playlist['id']).toString(),
-        {'list': list, 'updatedAt': now},
-      );
+    final stampedSongs = <Map>[];
+    for (final song in songs) {
+      final id = _songId(song);
+      if (id == null || id.isEmpty) continue;
+      stampedSongs.add({
+        ...Map<String, dynamic>.from(song),
+        'ytid': id,
+        'addedByUid': uid,
+        'addedByName': userName,
+        'addedAt': now,
+      });
     }
+    if (stampedSongs.isEmpty) return null;
 
-    code ??= normaliseCode(collabCodeOrId);
+    try {
+      final removal = _pendingSongRemovals[code];
+      if (removal != null) await removal;
+      final result = await _editSongs(
+        code,
+        (current) => _mergeSongs(current, stampedSongs, indexToInsert),
+      );
+      final stored = _storedCollaborativePlaylist(collabCodeOrId);
+      final id = (stored?['ytid'] ?? stored?['id'])?.toString();
+      if (id != null && result.added.isNotEmpty) {
+        final current = (stored?['list'] as List? ?? []).whereType<Map>();
+        final updated = _mergeSongs(
+          current.toList(),
+          result.added,
+          indexToInsert,
+        );
+        if (updated.added.isNotEmpty) {
+          updateStoredCustomPlaylist(id, {'list': updated.songs});
+        }
+      }
+      return result.added.length;
+    } catch (error, stackTrace) {
+      logger.log(
+        'Collaborative addSong remote sync failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      return null;
+    }
+  }
 
-    // 2. Sync to Firestore in real time
-    await _writeAddedSongs(code, [stampedSong]);
-    return true;
+  static String? _songId(Map song) => (song['ytid'] ?? song['id'])?.toString();
+
+  static CollaborativeSongEdit _mergeSongs(
+    List<Map> current,
+    List<Map> incoming,
+    int? indexToInsert,
+  ) {
+    final ids = current.map(_songId).toSet();
+    final added = incoming.where((song) => ids.add(_songId(song))).toList();
+    final updated = [...current];
+    final index = indexToInsert?.clamp(0, updated.length) ?? updated.length;
+    updated.insertAll(index, added);
+    return (songs: updated, added: added);
   }
 
   /// Removes a song from a collaborative playlist.
@@ -583,7 +619,25 @@ class CollaborativePlaylistService {
     code ??= normaliseCode(collabCodeOrId);
     if (songToRemove == null) return false;
 
+    final removal = _removeFirestoreSong(code, songYtid, songToRemove);
+    _pendingSongRemovals[code] = removal;
     try {
+      await removal;
+    } finally {
+      if (identical(_pendingSongRemovals[code], removal)) {
+        unawaited(_pendingSongRemovals.remove(code));
+      }
+    }
+    return true;
+  }
+
+  Future<void> _removeFirestoreSong(
+    String code,
+    String songYtid,
+    Map songToRemove,
+  ) async {
+    try {
+      await _pendingSongRemovals[code];
       final docRef = FirebaseFirestore.instance.collection(_collectionName).doc(code);
       final docSnap = await docRef.get().timeout(const Duration(seconds: 4));
       final remoteSongs = docSnap.data()?['songs'] as List? ?? const [];
@@ -597,10 +651,8 @@ class CollaborativePlaylistService {
         ),
         'updatedAt': FieldValue.serverTimestamp(),
       }).timeout(const Duration(seconds: 4));
-      return true;
     } catch (e) {
       logger.log('Collaborative removeSong remote sync failed', error: e);
-      return true;
     }
   }
 
@@ -649,7 +701,9 @@ class CollaborativePlaylistService {
                   artwork['image'] != current['image'];
               final updated = updateStoredCustomPlaylist(id, {
                 'title': data['title']?.toString() ?? current['title'],
-                'list': songs,
+                if (!snapshot.metadata.isFromCache &&
+                    !snapshot.metadata.hasPendingWrites)
+                  'list': songs,
                 'collaborators': collaborators,
                 ...artwork,
               });

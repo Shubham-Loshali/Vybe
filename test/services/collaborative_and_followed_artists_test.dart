@@ -20,6 +20,7 @@ import '../support/test_account_user.dart';
 void main() {
   final collaborative = CollaborativePlaylistService.withPublisher(
     (_, __) async {},
+    editSongs: (_, edit) async => edit([]),
   );
   TestWidgetsFlutterBinding.ensureInitialized();
   late Directory tempDir;
@@ -343,6 +344,77 @@ void main() {
       expect(created['list'], isEmpty);
     });
 
+    test('a guest can retry a failed shared add without losing host songs', () async {
+      const guestPlaylistId = 'customId-guest-copy';
+      final account = CloudSyncService.instance.currentUser;
+      final previousAccount = account.value;
+      final previousFolders = userPlaylistFolders.value;
+      addTearDown(() {
+        account.value = previousAccount;
+        userPlaylistFolders.value = previousFolders;
+      });
+      account.value = TestAccountUser(uid: 'guest', displayName: 'Deepak');
+      userPlaylistFolders.value = [
+        {
+          'playlists': [
+            {
+              'ytid': guestPlaylistId,
+              'collabId': 'ABC123',
+              'ownerUid': 'host',
+              'isCollaborative': true,
+              'list': <Map>[],
+            },
+          ],
+        },
+      ];
+      var remoteSongs = <Map>[{'ytid': 'host-track'}];
+      final firstWrite = Completer<void>();
+      final shared = CollaborativePlaylistService.withPublisher(
+        (_, __) async {},
+        editSongs: (code, edit) async {
+          expect(code, 'ABC123');
+          await firstWrite.future;
+          final result = edit(remoteSongs);
+          remoteSongs = result.songs;
+          return result;
+        },
+      );
+      List localSongs() => storedCustomPlaylists.singleWhere(
+        (playlist) => playlist['ytid'] == guestPlaylistId,
+      )['list'] as List;
+
+      final pending = shared.addSongs(guestPlaylistId, [{'id': 'guest-track'}]);
+      expect(localSongs(), isEmpty);
+      firstWrite.completeError(StateError('Write rejected'));
+      expect(await pending, isNull);
+      expect(localSongs(), isEmpty);
+
+      final retry = CollaborativePlaylistService.withPublisher(
+        (_, __) async {},
+        editSongs: (code, edit) async {
+          expect(code, 'ABC123');
+          final result = edit(remoteSongs);
+          remoteSongs = result.songs;
+          return result;
+        },
+      );
+      expect(
+        await retry.addSongs(guestPlaylistId, [
+          {'id': 'guest-track'},
+          {'ytid': 'guest-track'},
+          {'ytid': 'host-track'},
+        ]),
+        1,
+      );
+      expect(
+        remoteSongs.map((song) => song['ytid']),
+        ['host-track', 'guest-track'],
+      );
+      expect(remoteSongs.last['addedByUid'], 'guest');
+      expect(remoteSongs.last['addedByName'], 'Deepak');
+      expect(localSongs().single, remoteSongs.last);
+    });
+
     test('addSong and removeSong in collaborative playlist with collaborator attribution', () async {
       final res = await collaborative.createCollaborativePlaylist(
         'Road Trip Beats',
@@ -357,7 +429,7 @@ void main() {
       };
 
       // Add song through CollaborativePlaylistService
-      final addSuccess = await CollaborativePlaylistService.instance.addSong(playlistId, song);
+      final addSuccess = await collaborative.addSong(playlistId, song);
       expect(addSuccess, isTrue);
 
       final playlistWithSong = userCustomPlaylists.value.firstWhere(
@@ -372,7 +444,7 @@ void main() {
       expect(addedSong['addedAt'], isNotNull);
 
       // Remove song
-      final removeSuccess = await CollaborativePlaylistService.instance.removeSong(playlistId, 'song_track_101');
+      final removeSuccess = await collaborative.removeSong(playlistId, 'song_track_101');
       expect(removeSuccess, isTrue);
 
       final playlistEmpty = userCustomPlaylists.value.firstWhere(

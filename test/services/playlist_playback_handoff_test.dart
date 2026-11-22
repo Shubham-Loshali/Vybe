@@ -84,6 +84,90 @@ void main() {
   );
 
   test(
+    'System media Stop dismisses a paused track and allows in-app resume',
+    () async {
+      final originalPlatform = JustAudioPlatform.instance;
+      final platform = _PlaybackPlatform();
+      JustAudioPlatform.instance = platform;
+      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+      final audio = VybeAudioHandler();
+      addTearDown(() async {
+        await audio.stop();
+        await audio.audioPlayer.dispose();
+        JustAudioPlatform.instance = originalPlatform;
+        debugDefaultTargetPlatformOverride = null;
+      });
+      const id = 'media-card-stop-track';
+      const url = 'https://example.com/media-card-stop-track.m4a';
+      await addOrUpdateData(
+        'cache',
+        'song_${id}_${audioQualitySetting.value}_url',
+        url,
+      );
+      final started = platform.started.first;
+      await audio.playResumableSong({'ytid': id, 'title': 'Media card'});
+      expect(await started, url);
+      await audio.pause();
+      expect(await audio.getChildren(AudioService.recentRootId), hasLength(1));
+
+      final stopping = audio.stop();
+      expect(audio.playbackState.value.processingState, AudioProcessingState.idle);
+      expect(audio.playbackState.value.controls, isEmpty);
+      expect(audio.playbackState.value.systemActions, isEmpty);
+      await stopping;
+      expect(platform.audibleSource, isNull);
+      expect(await audio.getChildren(AudioService.recentRootId), isEmpty);
+      expect(audio.queue.value, hasLength(1));
+
+      final resumed = platform.started.first;
+      await audio.play();
+      expect(await resumed, url);
+      expect(await audio.getChildren(AudioService.recentRootId), hasLength(1));
+      final state = await audio.playbackState
+          .firstWhere((state) => state.playing)
+          .timeout(const Duration(seconds: 2));
+      expect(state.controls, contains(MediaControl.stop));
+    },
+  );
+
+  test(
+    'System media Stop cancels a track loading in the background',
+    () async {
+      final originalPlatform = JustAudioPlatform.instance;
+      final platform = _PlaybackPlatform();
+      JustAudioPlatform.instance = platform;
+      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+      final audio = VybeAudioHandler();
+      final gate = platform.loadGate = Completer<void>();
+      addTearDown(() async {
+        if (!gate.isCompleted) gate.complete();
+        await audio.stop();
+        await audio.audioPlayer.dispose();
+        JustAudioPlatform.instance = originalPlatform;
+        debugDefaultTargetPlatformOverride = null;
+      });
+      const id = 'media-card-loading-track';
+      const url = 'https://example.com/media-card-loading-track.m4a';
+      await addOrUpdateData(
+        'cache',
+        'song_${id}_${audioQualitySetting.value}_url',
+        url,
+      );
+      final requested = platform.loading.first;
+      final loading = audio.playResumableSong({'ytid': id, 'title': 'Loading'});
+      expect(await requested, url);
+
+      final stopping = audio.stop();
+      gate.complete();
+      await Future.wait([loading, stopping]);
+      expect(platform.audibleSource, isNull);
+      expect(audio.playbackState.value.playing, isFalse);
+      expect(audio.playbackState.value.controls, isEmpty);
+      expect(await audio.getChildren(AudioService.recentRootId), isEmpty);
+    },
+  );
+
+  test(
     'stream lookup overlaps the pause and shares an in-flight validation',
     () async {
       final originalPlatform = JustAudioPlatform.instance;
@@ -356,6 +440,7 @@ class _PlatformPlayer extends AudioPlayerPlatform {
   final _PlaybackPlatform platform;
   final events = StreamController<PlaybackEventMessage>();
   String? _loadedSource;
+  bool _playWhenReady = false;
 
   @override
   Stream<PlaybackEventMessage> get playbackEventMessageStream => events.stream;
@@ -369,6 +454,7 @@ class _PlatformPlayer extends AudioPlayerPlatform {
     await platform.loadGate?.future;
     _loadedSource = source;
     publish(ProcessingStateMessage.ready);
+    if (_playWhenReady) _startPlayback(source);
     return LoadResponse(duration: const Duration(minutes: 3));
   }
 
@@ -390,9 +476,15 @@ class _PlatformPlayer extends AudioPlayerPlatform {
 
   @override
   Future<PlayResponse> play(PlayRequest request) async {
-    platform.audibleSource = _loadedSource;
-    platform._started.add(_loadedSource!);
+    _playWhenReady = true;
+    final source = _loadedSource;
+    if (source != null) _startPlayback(source);
     return PlayResponse();
+  }
+
+  void _startPlayback(String source) {
+    platform.audibleSource = source;
+    platform._started.add(source);
   }
 
   @override
@@ -402,6 +494,7 @@ class _PlatformPlayer extends AudioPlayerPlatform {
       throw PlatformException(code: 'pause-failed');
     }
     await platform.pauseGate?.future;
+    _playWhenReady = false;
     platform.audibleSource = null;
     return PauseResponse();
   }

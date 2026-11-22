@@ -288,18 +288,17 @@ class _PlaylistPageState extends State<PlaylistPage> {
   }
 
   /// Adds a recommendation directly to the current playlist with one tap.
-  void _handleAddRecommendedSong(Map song) {
+  Future<void> _handleAddRecommendedSong(Map song) async {
     final playlistId = _resolvedPlaylistId;
     if (playlistId == null) return;
 
-    final result = addSongInCustomPlaylist(context, playlistId, song);
+    final result = await addSongInCustomPlaylist(context, playlistId, song);
+    if (!mounted) return;
     showToast(context, result);
 
     if (result == context.l10n!.songAdded) {
       setState(() {
         _addedRecommendedSongIds.add(song['ytid']?.toString() ?? '');
-        _originalPlaylistList.add(song);
-        _applySort();
       });
     }
   }
@@ -619,44 +618,42 @@ class _PlaylistPageState extends State<PlaylistPage> {
     )) {
       return;
     }
-    _updateSongsListOnRemove(canonicalIndex, song);
+    _updateSongsListOnRemove(
+      canonicalPlaylist['list'] as List,
+      canonicalIndex,
+      song,
+    );
   }
 
-  void _updateSongsListOnRemove(int indexToRestore, dynamic songToRemove) {
-    _originalPlaylistList = List<dynamic>.from(_originalPlaylistList)
-      ..removeAt(indexToRestore);
+  void _updateSongsListOnRemove(
+    List<dynamic> updatedSongs,
+    int indexToRestore,
+    Map songToRemove,
+  ) {
+    _originalPlaylistList = updatedSongs;
     _applySort();
     final playlistId = (_playlist['ytid'] ?? _playlist['id'])?.toString();
     if (playlistId == null) {
       if (mounted) setState(() {});
       return;
     }
-    final songToRemoveId = (songToRemove is Map ? (songToRemove['ytid'] ?? songToRemove['id']) : null)?.toString();
     if (mounted) {
       setState(() {});
       showToastWithButton(
         context,
         context.l10n!.songRemoved,
         context.l10n!.undo.toUpperCase(),
-        () {
-          final result = addSongInCustomPlaylist(
+        () async {
+          if (!mounted) return;
+          final result = await addSongInCustomPlaylist(
             context,
             playlistId,
             songToRemove,
             indexToInsert: indexToRestore,
           );
-          if (result == context.l10n!.songAdded &&
-              !_originalPlaylistList.any(
-                (song) => (song is Map ? (song['ytid'] ?? song['id']) : null)?.toString() == songToRemoveId,
-              )) {
-            final safeIndex = indexToRestore.clamp(
-              0,
-              _originalPlaylistList.length,
-            );
-            _originalPlaylistList.insert(safeIndex, songToRemove);
-            _applySort();
+          if (mounted && result != context.l10n!.songAdded) {
+            showToast(context, result);
           }
-          if (mounted) setState(() {});
         },
       );
     } else {
