@@ -9,6 +9,7 @@ import 'package:hive_ce/hive_ce.dart';
 import 'package:http/http.dart' as http;
 import 'package:vybe/constants/clients.dart';
 import 'package:vybe/main.dart' show logger;
+import 'package:vybe/services/artist_service.dart' show ytMusicClient;
 import 'package:vybe/services/data_manager.dart';
 import 'package:vybe/services/explore_service.dart';
 import 'package:vybe/services/io_service.dart';
@@ -124,6 +125,19 @@ Future<String?> _getCachedSongUrl(
     return null;
   }
 
+  // Stream URLs say when they expire. Trusting that avoids a network check
+  // (up to 1.5 s) before replaying a song; a URL that fails anyway is
+  // refetched by the player's retry.
+  final expiry = _streamUrlExpiry(cachedUrl);
+  if (expiry != null) {
+    if (expiry.isAfter(DateTime.now().add(const Duration(minutes: 5)))) {
+      return cachedUrl;
+    }
+    await deleteData('cache', cacheKey);
+    await deleteData('cache', '${cacheKey}_date');
+    return null;
+  }
+
   final cacheBox = await Hive.openBox('cache');
   final cacheDate = cacheBox.get('${cacheKey}_date') as DateTime?;
   final now = DateTime.now();
@@ -141,6 +155,43 @@ Future<String?> _getCachedSongUrl(
   await deleteData('cache', cacheKey);
   await deleteData('cache', '${cacheKey}_date');
   return null;
+}
+
+/// The expiry time in a YouTube stream URL's `expire` parameter, if any.
+DateTime? _streamUrlExpiry(String url) {
+  final seconds = int.tryParse(
+    Uri.tryParse(url)?.queryParameters['expire'] ?? '',
+  );
+  return seconds == null
+      ? null
+      : DateTime.fromMillisecondsSinceEpoch(seconds * 1000);
+}
+
+/// Starts looking up stream URLs for [songs] in the background, so they play
+/// instantly when tapped. Songs already cached, downloaded or live are
+/// skipped, and at most [limit] are looked up.
+void prefetchSongStreamUrls(Iterable<dynamic> songs, {int limit = 3}) {
+  if (offlineMode.value) return;
+  final ids = <String>[];
+  for (final song in songs) {
+    if (ids.length >= limit) break;
+    if (song is! Map || song['isLive'] == true) continue;
+    final id = (song['ytid'] ?? song['id'])?.toString();
+    if (id == null || id.isEmpty || isSongAlreadyOffline(id)) continue;
+    final key = 'song_${id}_${audioQualitySetting.value}_url';
+    final cached = _memoryStreamUrlCache[key];
+    if (cached != null && cached.expiry.isAfter(DateTime.now())) continue;
+    ids.add(id);
+  }
+  if (ids.isEmpty) return;
+  // One at a time, so prefetching never competes with a song being played.
+  unawaited(
+    Future(() async {
+      for (final id in ids) {
+        await fetchSongStreamUrl(id, false);
+      }
+    }),
+  );
 }
 
 /// Checks if a cached URL still responds successfully.
@@ -616,29 +667,75 @@ Future<List<Map<String, int>>> getSkipSegments(String id) async {
   }
 }
 
-/// The first song related to [songYtId] whose ytid is not in [excludedYtIds].
+/// Song radios fetched this session, keyed by seed ytid. Autoplay asks for
+/// the same seed's radio after every song, so this saves a request each time.
+final Map<String, List<Map<String, dynamic>>> _radioCache = {};
+final Map<String, Future<List<Map<String, dynamic>>>> _radioRequests = {};
+const _maxCachedRadios = 20;
+
+/// Songs of a similar genre and mood to [songYtId], in the order they should
+/// play next (like a "song radio"). Uses YouTube Music's radio, and falls
+/// back to YouTube's related videos when that is unavailable.
+Future<List<Map<String, dynamic>>> getRadioSongs(String songYtId) {
+  final cached = _radioCache[songYtId];
+  if (cached != null) return Future.value(cached);
+  return _radioRequests[songYtId] ??= _fetchRadioSongs(songYtId).whenComplete(
+    () => _radioRequests.remove(songYtId),
+  );
+}
+
+Future<List<Map<String, dynamic>>> _fetchRadioSongs(String songYtId) async {
+  var songs = <Map<String, dynamic>>[];
+  try {
+    final tracks = await ytMusicClient.music
+        .getRadio(songYtId)
+        .timeout(const Duration(seconds: 10));
+    songs = [
+      for (final (index, track) in tracks.indexed)
+        returnSongLayout(index, track, isCatalogTrack: true),
+    ];
+  } catch (e, stackTrace) {
+    logger.log('Song radio failed for $songYtId', error: e, stackTrace: stackTrace);
+  }
+
+  if (songs.isEmpty) {
+    try {
+      final song = await ytClient.videos.get(songYtId);
+      final related = await ytClient.videos.getRelatedVideos(song) ?? [];
+      songs = [
+        for (final (index, video) in related.indexed)
+          if (!video.isLive) returnSongLayout(index, video),
+      ];
+    } catch (e, stackTrace) {
+      logger.log(
+        'Related songs failed for $songYtId',
+        error: e,
+        stackTrace: stackTrace,
+      );
+    }
+  }
+
+  if (songs.isNotEmpty) {
+    if (_radioCache.length >= _maxCachedRadios) {
+      _radioCache.remove(_radioCache.keys.first);
+    }
+    _radioCache[songYtId] = songs;
+  }
+  return songs;
+}
+
+/// The first song from [songYtId]'s radio whose ytid is not in
+/// [excludedYtIds].
 Future<Map<String, dynamic>?> getSimilarSong(
   String songYtId, {
   Set<String> excludedYtIds = const {},
 }) async {
-  try {
-    final song = await ytClient.videos.get(songYtId);
-    final relatedSongs = await ytClient.videos.getRelatedVideos(song) ?? [];
-
-    for (final video in relatedSongs) {
-      final candidate = returnSongLayout(0, video);
-      if (!excludedYtIds.contains(candidate['ytid']?.toString())) {
-        return candidate;
-      }
+  for (final candidate in await getRadioSongs(songYtId)) {
+    if (!excludedYtIds.contains(candidate['ytid']?.toString())) {
+      return Map<String, dynamic>.from(candidate);
     }
-    logger.log('No new related songs found for $songYtId');
-  } catch (e, stackTrace) {
-    logger.log(
-      'Error while fetching next similar song:',
-      error: e,
-      stackTrace: stackTrace,
-    );
   }
+  logger.log('No new similar songs found for $songYtId');
   return null;
 }
 

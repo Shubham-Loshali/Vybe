@@ -22,6 +22,8 @@ if (keystorePropertiesFile.exists()) {
     }
 }
 
+val releaseKeystoreFile = file(keystoreProperties.getProperty("storeFile", "key.jks"))
+
 android {
     namespace = "com.vybe.music"
     compileSdk = 36
@@ -74,8 +76,8 @@ android {
 
     signingConfigs {
         create("release") {
-            // From decoded key
-            storeFile = file("key.jks")
+            // Local builds can select the existing release key via key.properties.
+            storeFile = releaseKeystoreFile
 
             // From key.properties
             keyAlias = keystoreProperties["keyAlias"] as String?
@@ -97,7 +99,7 @@ android {
 
     buildTypes {
         getByName("release") {
-            signingConfig = if (keystorePropertiesFile.exists() && file("key.jks").exists()) {
+            signingConfig = if (keystorePropertiesFile.exists() && releaseKeystoreFile.exists()) {
                 signingConfigs.getByName("release")
             } else {
                 signingConfigs.getByName("debug")

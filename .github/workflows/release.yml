@@ -1,102 +1,98 @@
+name: Build and release Android updates
 on:
+  workflow_dispatch:
   push:
-    branches:
-      - main
-
-name: Test, Build and Release apk
-
-env:
-  PROPERTIES_PATH: './android/key.properties'
-
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: android-release
+  cancel-in-progress: false
 jobs:
   build:
-    name: Build APK
-    if: "contains(github.event.head_commit.message, 'Update:')"
+    if: "github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, 'Update: v')"
     runs-on: ubuntu-latest
-
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - flavor: github
+            asset: Vybe.apk
+            package: com.vybe.music
+            certificate: 2c55f7dbcacfc3f77d3b1a7d4a401db7e28db5636eba2f0170dfc667d17acf29
+          - flavor: companion
+            asset: Vybe-companion.apk
+            package: com.vybe.music.updated
+            certificate: 7e4d85cf51de24f54478078f60cf032d10d181598706ca00798f80b4e57b0581
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      # Extract version from commit message
-      - name: Extract version
-        id: extract_version
-        run: |
-          version=$(echo ${{ github.event.head_commit.message }} | grep -oP '(?<=Update: v)\d+\.\d+\.\d+')
-          echo "version=${version}" >> $GITHUB_OUTPUT
-
-      # Setup Java environment in order to build the Android app.
-      - name: Set up Java
-        uses: actions/setup-java@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
         with:
-          distribution: 'zulu'
+          distribution: zulu
           java-version: '21'
-
-      # Gradle cache for faster builds
-      - name: Cache Gradle dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*') }}
-          restore-keys: |
-            ${{ runner.os }}-gradle-
-
-      # Setup the Flutter environment.
       - uses: subosito/flutter-action@v2
         with:
-          channel: 'stable'
+          channel: stable
           flutter-version: '3.50.0'
-
-      #
-      - run: |
-          echo keyPassword=\${{ secrets.KEY_STORE }} > ${{env.PROPERTIES_PATH}}
-          echo storePassword=\${{ secrets.KEY_PASSWORD }} >> ${{env.PROPERTIES_PATH}}
-          echo keyAlias=\${{ secrets.KEY_ALIAS }} >> ${{env.PROPERTIES_PATH}}
-      #
-      - run: echo "${{ secrets.KEYSTORE2 }}" | base64 --decode > android/app/key.jks
-
-      # Get Flutter dependencies.
-      - name: Get Flutter dependencies
-        run: flutter pub get
-
-      # # Check for any formatting issues in the code.
-      # - name: Check code formatting
-      #   run: dart format --set-exit-if-changed .
-
-      # Statically analyze the Dart code for any errors.
-      - name: Analyze Dart code
-        run: flutter analyze .
-
-      # Build arm64 APK for GitHub release
-      - name: Build arm64 APK
-        run: flutter build apk --release --split-per-abi --target-platform="android-arm64" --flavor github
-
-      # Release arm64 generated APK
-      - name: Release arm64 APK
-        uses: svenstaro/upload-release-action@v2
+          cache: true
+      - name: Configure matching release key
+        env:
+          KEYSTORE_DATA: ${{ matrix.flavor == 'github' && secrets.VYBE_ORIGINAL_KEYSTORE || secrets.VYBE_COMPANION_KEYSTORE }}
+          STORE_PASSWORD: ${{ secrets.VYBE_STORE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          test -n "$KEYSTORE_DATA"
+          test -n "$STORE_PASSWORD"
+          printf '%s' "$KEYSTORE_DATA" | base64 --decode > android/app/key.jks
+          printf 'storeFile=key.jks\nkeyAlias=androiddebugkey\nstorePassword=%s\nkeyPassword=%s\n' "$STORE_PASSWORD" "$STORE_PASSWORD" > android/key.properties
+      - run: flutter pub get --enforce-lockfile
+      - run: flutter analyze --no-fatal-infos
+      - run: flutter test
+      - name: Build and verify APK identity
+        env:
+          FLAVOR: ${{ matrix.flavor }}
+          EXPECTED_PACKAGE: ${{ matrix.package }}
+          EXPECTED_CERTIFICATE: ${{ matrix.certificate }}
+          ASSET: ${{ matrix.asset }}
+        run: |
+          set -euo pipefail
+          flutter build apk --release --flavor "$FLAVOR"
+          apk="build/app/outputs/flutter-apk/app-${FLAVOR}-release.apk"
+          signer=$(find "$ANDROID_HOME/build-tools" -name apksigner | sort -V | tail -n 1)
+          aapt=$(find "$ANDROID_HOME/build-tools" -name aapt | sort -V | tail -n 1)
+          "$signer" verify --print-certs "$apk" > certificate.txt
+          grep -F "certificate SHA-256 digest: $EXPECTED_CERTIFICATE" certificate.txt
+          "$aapt" dump badging "$apk" > apk-metadata.txt
+          grep -F "package: name='$EXPECTED_PACKAGE'" apk-metadata.txt
+          mkdir -p release
+          cp "$apk" "release/$ASSET"
+          (cd release && sha256sum "$ASSET" > "$ASSET.sha256")
+      - uses: actions/upload-artifact@v4
         with:
-          repo_name: ${{ github.repository }}
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: build/app/outputs/flutter-apk/app-arm64-v8a-github-release.apk
-          asset_name: Vybe-arm64-v8a.apk
-          tag: ${{ steps.extract_version.outputs.version }}
-          prerelease: false
-          overwrite: true
-
-      # Build universal APK
-      - name: Build universal APK
-        run: flutter build apk --release --flavor github
-
-      # Release universal generated APK
-      - name: Release universal APK
-        uses: svenstaro/upload-release-action@v2
+          name: release-${{ matrix.flavor }}
+          path: release/*
+          if-no-files-found: error
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
         with:
-          repo_name: ${{ github.repository }}
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: build/app/outputs/flutter-apk/app-github-release.apk
-          asset_name: Vybe.apk
-          tag: ${{ steps.extract_version.outputs.version }}
-          prerelease: false
-          overwrite: true
+          pattern: release-*
+          path: release
+          merge-multiple: true
+      - name: Publish both verified packages together
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version=$(sed -n 's/^version: \([^+ ]*\).*/\1/p' pubspec.yaml)
+          tag="v$version"
+          test -s release/Vybe.apk
+          test -s release/Vybe-companion.apk
+          printf 'Android update %s. Use Vybe.apk for com.vybe.music, or Vybe-companion.apk for com.vybe.music.updated. Keep the installed app to preserve its data.\n' "$version" > release-notes.txt
+          gh release create "$tag" release/* --draft --title "Vybe $version" --notes-file release-notes.txt --target "$GITHUB_SHA"
+          gh release edit "$tag" --draft=false --latest

@@ -31,6 +31,8 @@ class UiTestAudioHandler extends Fake implements VybeAudioHandler {
   @override
   bool get isCurrentSongLoaded => false;
   @override
+  bool get canSkipToNext => queue.value.length > 1;
+  @override
   Future<void> playResumableSong(Map<dynamic, dynamic> song) async {
     selectedSongs.add(song);
   }
@@ -60,7 +62,10 @@ class UiTestAudioHandler extends Fake implements VybeAudioHandler {
     PlaybackState(processingState: AudioProcessingState.ready),
   );
   @override
-  Future<void> skipToNext({bool playWhenReady = true}) async {}
+  Future<void> skipToNext({
+    bool playWhenReady = true,
+    bool automatic = false,
+  }) async {}
   Future<void> close() async {
     // A paused app-lifetime broadcast subscription can defer a subject's done
     // event. Close every input without waiting for that deferred event.

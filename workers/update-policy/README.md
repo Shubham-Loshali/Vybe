@@ -1,32 +1,18 @@
-# Version 10.6.5 rollout
+# Android 10.6.6 rollout
 
-Build the companion release with version `10.6.5+208` and publish it as `Vybe.apk`
-on GitHub release `v10.6.5` before activating this policy. Keep the root
-`check.json` identical to `workers/update-policy/check.json`. The existing
-Cloudflare Worker's `/check` route returns that policy with
-`Cache-Control: no-store`.
+Version: 10.6.6+217. Preserve both existing Android package identities:
 
-The `main` and `update` branches share the same commit and source files.
-Production deploys from `main`; `update` builds its branch Preview using the
-same root `wrangler.toml`, including `previews = {}`. The root fallback
-`check.json` remains available at its existing URL on the `update` branch.
-After preparing and checking a release, keep both branches aligned with
-`git push --atomic origin main main:update`.
+| Asset | Package | Signing certificate SHA-256 |
+| --- | --- | --- |
+| Vybe.apk | com.vybe.music | 2c55f7dbcacfc3f77d3b1a7d4a401db7e28db5636eba2f0170dfc667d17acf29 |
+| Vybe-companion.apk | com.vybe.music.updated | 7e4d85cf51de24f54478078f60cf032d10d181598706ca00798f80b4e57b0581 |
 
-Clients with update checks block themselves when `version` is higher than their
-installed version. The policy requires `10.6.5` and explicitly lists versions
-`10.6.0` through `10.6.4` as blocked. Keep `force_shutdown` false: clients apply
-that flag to every version, including the replacement release.
+Both assets are universal APKs. The public 10.6.5 companion APK reads companion_url; original-package builds use url/arm64url. Never change an installed app's package or signing key to distribute an update.
 
-The original public signing key is unavailable. This release distributes
-`Vybe.apk` with package `com.vybe.music.updated`, signed with the local key used
-for companion builds 189–205. It updates those installations in place. Users
-of the original `com.vybe.music` app must install this release alongside it;
-Android will not transfer the original app's data automatically. Preserve the
-original installation and any backups. Its signing key must be recovered
-before a compatible in-place update can be produced.
+Publish release v10.6.6 and verify BOTH asset downloads before advancing the policy in root check.json and workers/update-policy/check.json. Set url and arm64url to Vybe.apk; set companion_url to Vybe-companion.apk. Keep force_shutdown false so the new version remains usable. Older builds that perform update checks show a mandatory update when version advances; builds with disabled checks cannot be remotely blocked.
 
-Previously distributed companion 10.6.2 builds disabled update checks and
-cannot be remotely shut down. Checks are enabled from 10.6.3 onward.
+The root wrangler.toml deploys the update worker only. The Cloudflare Git integration uses main for production. Keep both policy copies identical and fast-forward update after verifying its history is an ancestor: git push --atomic origin main main:update. Verify the live Worker and raw GitHub fallback after deployment. Publishing source files does not deploy Firebase rules or the desktop backend.
 
-Build number is 208. Preserve the companion signing key outside source control.
+The release workflow builds both flavors, checks their package and signing certificate, and publishes both assets together under a v-prefixed tag. It runs manually or on main commits containing Update: v. It requires encrypted Actions secrets VYBE_ORIGINAL_KEYSTORE and VYBE_COMPANION_KEYSTORE (base64), and VYBE_STORE_PASSWORD. Both existing keys use alias androiddebugkey. Private-key upload requires the owner's explicit approval; until configured, publish the locally signed verified APKs instead. Keep keystores, signing settings, and passwords outside Git source control.
+
+For future versions, update pubspec.yaml and lib/constants/version.dart together and increase the Android build number beyond 217. Change update-policy tests with the next rollout. Do not advance policy before the matching release files are downloadable.

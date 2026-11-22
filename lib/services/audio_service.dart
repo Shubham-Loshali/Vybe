@@ -33,7 +33,10 @@ typedef RemoteCommandSink = void Function(
 });
 
 class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
-  VybeAudioHandler({this.findSimilarSong = getSimilarSong}) {
+  VybeAudioHandler({
+    this.findSimilarSong = getSimilarSong,
+    this.findRadioSongs = getRadioSongs,
+  }) {
     // Two identical players: only one is "active" at a time and every
     // existing code path goes through [audioPlayer], which returns it. The
     // other one stays idle and is used only to pre-load the next song for a
@@ -70,6 +73,10 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
     Set<String> excludedYtIds,
   })
   findSimilarSong;
+
+  /// The full list of songs similar to a seed, used for the suggestions shown
+  /// under the queue.
+  final Future<List<Map<String, dynamic>>> Function(String) findRadioSongs;
 
   Future<Map?>? _autoplayCandidate;
   int? _autoplayCandidateTransition;
@@ -291,28 +298,38 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
       _hasCurrentQueueIndex &&
       (hasNext ||
           repeatNotifier.value == AudioServiceRepeatMode.all ||
-          _canUseAutoplay);
+          _canSuggestNext);
 
+  /// Whether a song ending by itself may continue with a similar song. This
+  /// is what the Autoplay setting controls.
   bool get _canUseAutoplay =>
       playNextSongAutomatically.value &&
-      !offlineMode.value &&
-      !isFollowingRemote &&
       !sleepTimerExpired &&
       repeatNotifier.value == AudioServiceRepeatMode.none &&
       isCurrentSongLoaded &&
-      currentSong?['isLive'] != true;
+      _canSuggestNext;
+
+  /// Whether pressing Next at the end of the queue can play a similar song.
+  /// Like Spotify, this works whatever the Autoplay setting says, and also
+  /// while the current song is still loading.
+  bool get _canSuggestNext =>
+      !offlineMode.value &&
+      !isFollowingRemote &&
+      currentSong?['isLive'] != true &&
+      (currentSong?['ytid']?.toString().isNotEmpty ?? false);
 
   List<MediaControl> _controls(bool playing) {
     final hasMultipleTracks = _queueList.length > 1;
 
     return [
-      if (hasMultipleTracks)
+      if (hasMultipleTracks || hasPrevious)
         MediaControl.skipToPrevious
       else
         MediaControl.rewind,
       if (playing) MediaControl.pause else MediaControl.play,
       MediaControl.stop,
-      if (hasMultipleTracks)
+      // With autoplay a single searched song can still skip to a similar one.
+      if (hasMultipleTracks || canSkipToNext)
         MediaControl.skipToNext
       else
         MediaControl.fastForward,
@@ -1034,7 +1051,7 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
         // Only retry if still on the same song (user didn't manually change tracks)
         if (_songTransitionCounter == failedTransition &&
             _currentQueueIndex == failedSongIndex) {
-          skipToNext();
+          skipToNext(automatic: true);
         }
       });
     } else {
@@ -1057,7 +1074,7 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
         await playAgain();
       } else {
         // For all other cases (next song, repeat all, auto-play), skipToNext handles it
-        await skipToNext();
+        await skipToNext(automatic: true);
       }
     } catch (e, stackTrace) {
       logger.log(
@@ -1068,11 +1085,31 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
     }
   }
 
+  /// The song whose radio autoplay follows. Songs picked by autoplay keep the
+  /// seed of the radio they came from, so a session stays in one genre
+  /// instead of drifting with every pick.
+  String? _radioSeedFor(Map? song) {
+    final seed = song?['radioSeed']?.toString();
+    if (seed != null && seed.isNotEmpty) return seed;
+    final id = song?['ytid']?.toString();
+    return (id == null || id.isEmpty) ? null : id;
+  }
+
+  Set<String> _playedOrQueuedIds() => {
+    for (final song in [..._queueList, ..._historyList])
+      if (song['ytid'] != null) song['ytid'].toString(),
+  };
+
   /// Prepares a suggestion outside the queue until playback advances.
+  ///
+  /// It is prepared whatever the Autoplay setting says, so a press of Next is
+  /// instant too; the setting decides only whether a song that ends by itself
+  /// moves on to it.
   Future<Map?>? _prepareAutoplay() {
-    if (!_canUseAutoplay || hasNext) return null;
+    if (!_canSuggestNext || hasNext) return null;
     final id = currentSong?['ytid']?.toString();
-    if (id == null || id.isEmpty) return null;
+    final seed = _radioSeedFor(currentSong);
+    if (id == null || id.isEmpty || seed == null) return null;
 
     final transition = _songTransitionCounter;
     if (_autoplayCandidateTransition == transition &&
@@ -1080,32 +1117,80 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
       return _autoplayCandidate;
     }
 
-    final excluded = {
-      id,
-      for (final song in [..._queueList, ..._historyList])
-        if (song['ytid'] != null) song['ytid'].toString(),
-    };
+    final excluded = {id, ..._playedOrQueuedIds()};
     _autoplayCandidateTransition = transition;
-    return _autoplayCandidate = _findAutoplayCandidate(id, excluded);
+    return _autoplayCandidate = _findAutoplayCandidate(seed, id, excluded);
   }
 
-  Future<Map?> _findAutoplayCandidate(String id, Set<String> excluded) async {
+  Future<Map?> _findAutoplayCandidate(
+    String seed,
+    String currentId,
+    Set<String> excluded,
+  ) async {
     try {
-      return await findSimilarSong(
-        id,
-        excludedYtIds: excluded,
-      ).timeout(const Duration(seconds: 10));
+      // Once the seed's radio is used up, continue from the current song.
+      for (final radioSeed in {seed, currentId}) {
+        final song = await findSimilarSong(
+          radioSeed,
+          excludedYtIds: excluded,
+        ).timeout(const Duration(seconds: 10));
+        if (song != null) {
+          // Not in the queue yet, so the preloader skips it: warm it up here
+          // so Next starts instantly.
+          prefetchSongStreamUrls([song], limit: 1);
+          return {...song, 'radioSeed': radioSeed};
+        }
+      }
     } catch (error, stackTrace) {
       logger.log(
         'Could not prepare autoplay',
         error: error,
         stackTrace: stackTrace,
       );
-      return null;
+    }
+    return null;
+  }
+
+  /// Songs similar to the current one, as autoplay would play them after the
+  /// queue ends. Songs already queued or played are left out.
+  Future<List<Map>> upcomingSuggestions({int limit = 10}) async {
+    if (offlineMode.value || isFollowingRemote) return const [];
+    final seed = _radioSeedFor(currentSong);
+    if (seed == null) return const [];
+    try {
+      final excluded = _playedOrQueuedIds();
+      final songs = await findRadioSongs(seed);
+      return [
+        for (final song in songs)
+          if (!excluded.contains(song['ytid']?.toString()))
+            {...song, 'radioSeed': seed},
+      ].take(limit).toList();
+    } catch (error, stackTrace) {
+      logger.log(
+        'Could not load suggestions',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      return const [];
     }
   }
 
-  Future<void> _advanceAutoplay({required bool playWhenReady}) async {
+  /// Plays [song] from the suggestions right away, after the current song.
+  Future<void> playSuggestion(Map song) async {
+    if (song['ytid'] == null) return;
+    if (_forwardRemote('playSong', song: song)) return;
+    final index = _hasCurrentQueueIndex
+        ? _currentQueueIndex + 1
+        : _queueList.length;
+    _autoplayCandidate = null;
+    _insertSongToQueueInternal(song, index, flagName: 'isAutoPicked');
+    await _playFromQueue(index);
+  }
+
+  Future<void> _advanceAutoplay({
+    required bool playWhenReady,
+    required bool automatic,
+  }) async {
     final pending = _prepareAutoplay();
     if (pending == null) return;
     final transition = _songTransitionCounter;
@@ -1114,7 +1199,7 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
     // Discard old work after a pause, stop, or a newer song selection.
     if (!identical(pending, _autoplayCandidate) ||
         transition != _songTransitionCounter ||
-        !_canUseAutoplay) {
+        !(automatic ? _canUseAutoplay : _canSuggestNext)) {
       return;
     }
     _autoplayCandidate = null;
@@ -1502,15 +1587,19 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
   }
 
   void _emitLoadingState({int? queueIndex}) {
+    // Report whether the song will start once loaded, so the play button can
+    // show pause right away (like Spotify) instead of a spinner.
+    final willPlay = _currentLoadingIndex < 0 || _queuePlayWhenReady;
     try {
       playbackState.add(
         PlaybackState(
           controls: [
             MediaControl.skipToPrevious,
-            MediaControl.pause,
+            if (willPlay) MediaControl.pause else MediaControl.play,
             MediaControl.stop,
             MediaControl.skipToNext,
           ],
+          playing: willPlay,
           systemActions: const {
             MediaAction.seek,
             MediaAction.seekForward,
@@ -1740,6 +1829,34 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
     return null;
   }
 
+  /// Puts the last played song back in the mini player at startup, paused,
+  /// like Spotify. No audio is loaded until play is pressed, which then
+  /// plays this song.
+  void restoreLastPlayed() {
+    if (_queueList.isNotEmpty || mediaItem.valueOrNull != null) return;
+    final recent = _firstPlayableSong(userRecentlyPlayed.value);
+    final song = recent == null ? null : normaliseResumableSong(recent);
+    if (song == null) return;
+    try {
+      _queueList.add(_queueEntryIds.createSong(song));
+      _currentQueueIndex = 0;
+      _updateQueueMediaItems(publishCurrentItem: false);
+      mediaItem.add(_getMediaItemForQueue(_queueList.first));
+      playbackState.add(
+        // Idle: shows the song without a media notification.
+        PlaybackState(controls: _controls(false), queueIndex: 0),
+      );
+      // Ready for an instant start when play is pressed.
+      prefetchSongStreamUrls([song], limit: 1);
+    } catch (e, stackTrace) {
+      logger.log(
+        'Could not restore the last played song',
+        error: e,
+        stackTrace: stackTrace,
+      );
+    }
+  }
+
   @override
   Map? latestResumableSong() {
     final activeSong = currentSong;
@@ -1912,6 +2029,7 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
   Future<void> _playLocal() async {
     if (_currentLoadingIndex >= 0) {
       _queuePlayWhenReady = true;
+      _emitLoadingState(queueIndex: _currentLoadingIndex);
       return;
     }
     _openMediaSession();
@@ -1956,6 +2074,7 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
     _autoplayCandidate = null;
     if (_currentLoadingIndex >= 0) {
       _queuePlayWhenReady = false;
+      _emitLoadingState(queueIndex: _currentLoadingIndex);
       return;
     }
     _finishCrossfadeNow();
@@ -2794,7 +2913,13 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
   Future<void> skipToQueueItem(int index) => skipToSong(index);
 
   @override
-  Future<void> skipToNext({bool playWhenReady = true}) async {
+  /// Moves to the next song. [automatic] is true when a song ended or failed
+  /// by itself: only then does the Autoplay setting decide whether a similar
+  /// song follows. A press of Next always plays one, like Spotify.
+  Future<void> skipToNext({
+    bool playWhenReady = true,
+    bool automatic = false,
+  }) async {
     if (_forwardRemote('next')) return;
     try {
       if (_currentQueueIndex < _queueList.length - 1) {
@@ -2805,9 +2930,13 @@ class VybeAudioHandler extends BaseAudioHandler implements AndroidAutoHost {
       } else if (repeatNotifier.value == AudioServiceRepeatMode.all &&
           _queueList.isNotEmpty) {
         await _playFromQueue(0, playWhenReady: playWhenReady);
-      } else if (playNextSongAutomatically.value &&
-          _currentLoadingIndex == -1) {
-        await _advanceAutoplay(playWhenReady: playWhenReady);
+      } else if (automatic
+          ? playNextSongAutomatically.value && _currentLoadingIndex == -1
+          : _canSuggestNext) {
+        await _advanceAutoplay(
+          playWhenReady: playWhenReady,
+          automatic: automatic,
+        );
       } else {
         if (audioPlayer.processingState != ProcessingState.completed) {
           await stop();

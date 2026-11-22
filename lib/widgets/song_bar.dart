@@ -289,8 +289,17 @@ class SongBar extends StatefulWidget {
     this.playCount,
     this.barPadding,
     this.onAdd,
+    this.typeLabel,
+    this.showLikeButton = false,
     super.key,
   });
+
+  /// Shown before the artist, as in "Song • Artist" in search results.
+  final String? typeLabel;
+
+  /// Adds a like toggle after the menu: an outlined plus, or a filled green
+  /// check once the song is in Liked Songs.
+  final bool showLikeButton;
 
   final dynamic song;
   final bool clearPlaylist;
@@ -416,6 +425,9 @@ class _SongBarState extends State<SongBar> {
       borderRadius: widget.borderRadius,
       clipBehavior: Clip.antiAlias,
       child: InkWell(
+        // Start the lookup as soon as the finger touches the row, a moment
+        // before the tap completes.
+        onTapDown: (_) => prefetchSongStreamUrls([widget.song], limit: 1),
         onTap: _handleSongTap,
         child: Padding(
           padding:
@@ -445,7 +457,9 @@ class _SongBarState extends State<SongBar> {
               Expanded(
                 child: _SongInfo(
                   title: _songTitle,
-                  artist: _songArtist,
+                  artist: widget.typeLabel == null
+                      ? _songArtist
+                      : '${widget.typeLabel} • $_songArtist',
                   addedByName: widget.song is Map
                       ? widget.song['addedByName']?.toString()
                       : null,
@@ -491,6 +505,34 @@ class _SongBarState extends State<SongBar> {
                   ),
                   itemBuilder: (context) =>
                       _buildMenuItems(context, colorScheme),
+                ),
+              if (widget.showLikeButton)
+                ValueListenableBuilder<bool>(
+                  valueListenable: _songLikeStatus,
+                  builder: (context, liked, _) => IconButton(
+                    tooltip: liked
+                        ? context.l10n!.removeFromLikedSongs
+                        : context.l10n!.addToLikedSongs,
+                    icon: Icon(
+                      liked
+                          ? FluentIcons.checkmark_circle_24_filled
+                          : FluentIcons.add_circle_24_regular,
+                      color: liked
+                          ? colorScheme.primary
+                          : colorScheme.onSurfaceVariant,
+                    ),
+                    onPressed: () => _handleSongMenuAction(
+                      context: context,
+                      value: 'like',
+                      song: widget.song,
+                      ytid: _ytid,
+                      songLikeStatus: _songLikeStatus,
+                      songOfflineStatus: _songOfflineStatus,
+                      songDownloadStatus: _songDownloadStatus,
+                      onRemove: widget.onRemove,
+                      onRename: () => _handleRenameSong(context),
+                    ),
+                  ),
                 ),
             ],
           ),

@@ -100,6 +100,7 @@ void main() {
     double scale = 1,
     double keyboardHeight = 0,
     bool usePublicEntry = false,
+    bool throughWelcome = true,
   }) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = size;
@@ -113,8 +114,12 @@ void main() {
         builder: (context, child) => RepaintBoundary(
           key: captureKey,
           child: MediaQuery(
-            data: MediaQuery.of(context)
-                .copyWith(textScaler: TextScaler.linear(scale)),
+            // The welcome artwork ripples forever, which would keep
+            // pumpAndSettle from settling.
+            data: MediaQuery.of(context).copyWith(
+              textScaler: TextScaler.linear(scale),
+              disableAnimations: true,
+            ),
             child: child!,
           ),
         ),
@@ -161,6 +166,16 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    if (throughWelcome) {
+      // The email form is the second step, after the welcome screen.
+      final step = signUp
+          ? find.text('Sign up with email')
+          : find.widgetWithText(TextButton, 'Log in');
+      await tester.ensureVisible(step);
+      await tester.pumpAndSettle();
+      await tester.tap(step);
+      await tester.pumpAndSettle();
+    }
   }
 
   Future<void> tapVisible(WidgetTester tester, Finder finder) async {
@@ -183,6 +198,39 @@ void main() {
       image.dispose();
     });
   }
+
+  testWidgets('the welcome screen leads to each way in, and back', (
+    tester,
+  ) async {
+    await openAuth(tester, throughWelcome: false);
+    expect(find.text('Continue with Google'), findsOneWidget);
+    expect(find.text('Sign up with email'), findsOneWidget);
+    expect(find.byKey(const ValueKey('auth-password')), findsNothing);
+    await capture(tester, 'welcome');
+
+    await tapVisible(tester, find.text('Sign up with email'));
+    expect(find.text('Create account'), findsOneWidget);
+    await tapVisible(tester, find.byTooltip('Back'));
+    expect(find.text('Sign up with email'), findsOneWidget);
+
+    await tapVisible(tester, find.widgetWithText(TextButton, 'Log in'));
+    expect(find.text('Forgot password?'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('the welcome screen fits small screens with large text', (
+    tester,
+  ) async {
+    await openAuth(
+      tester,
+      size: const Size(320, 568),
+      scale: 1.8,
+      throughWelcome: false,
+    );
+    await tester.ensureVisible(find.widgetWithText(TextButton, 'Log in'));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets(
     'account entry fills the screen and offers the existing sign-up methods',

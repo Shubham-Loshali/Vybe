@@ -31,10 +31,8 @@ class AuthDialog extends StatefulWidget {
         context: context,
         useSafeArea: false,
         barrierDismissible: false,
-        builder: (_) => AuthDialog(
-          initiallySignUp: initiallySignUp,
-          service: service,
-        ),
+        builder: (_) =>
+            AuthDialog(initiallySignUp: initiallySignUp, service: service),
       );
     } finally {
       _isShowing = false;
@@ -45,7 +43,19 @@ class AuthDialog extends StatefulWidget {
   State<AuthDialog> createState() => _AuthDialogState();
 }
 
-class _AuthDialogState extends State<AuthDialog> {
+class _AuthDialogState extends State<AuthDialog>
+    with SingleTickerProviderStateMixin {
+  /// The welcome screen with the artwork comes first; the email form is the
+  /// second step, reached from its buttons.
+  bool _showWelcome = true;
+  /// The ripple plays for about 40 seconds, then rests: each loop ends where
+  /// the next begins, so it stops without a jump and doesn't run the battery
+  /// down while the screen waits.
+  static const _waveLoops = 6;
+  late final _waves = AnimationController(
+    vsync: this,
+    duration: const Duration(seconds: 7),
+  );
   final _formKey = GlobalKey<FormState>();
   final _emailFieldKey = GlobalKey<FormFieldState<String>>();
   final _emailController = TextEditingController();
@@ -68,7 +78,42 @@ class _AuthDialogState extends State<AuthDialog> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (MediaQuery.disableAnimationsOf(context) || !_showWelcome) {
+      _waves.stop();
+    } else if (!_waves.isAnimating) {
+      _waves.repeat(count: _waveLoops);
+    }
+  }
+
+  void _openForm({required bool signUp}) {
+    if (_isLoading) return;
+    _waves.stop();
+    setState(() {
+      _showWelcome = false;
+      _isSignUp = signUp;
+      _errorMessage = null;
+      _infoMessage = null;
+    });
+  }
+
+  void _backToWelcome() {
+    if (_isLoading) return;
+    FocusScope.of(context).unfocus();
+    if (!MediaQuery.disableAnimationsOf(context)) {
+      _waves.repeat(count: _waveLoops);
+    }
+    setState(() {
+      _showWelcome = true;
+      _errorMessage = null;
+      _infoMessage = null;
+    });
+  }
+
+  @override
   void dispose() {
+    _waves.dispose();
     _emailController.dispose();
     _passwordController.dispose();
     _passwordFocus.dispose();
@@ -226,16 +271,195 @@ class _AuthDialogState extends State<AuthDialog> {
     }
   }
 
+  /// First step: the Vybe artwork, a headline, and big buttons for each way
+  /// in, in the style of Spotify's start screen.
+  Widget _buildWelcome(BuildContext context, bool canClose) {
+    final height = MediaQuery.sizeOf(context).height;
+    // The artwork takes the room the buttons leave, so they sit low on the
+    // screen like Spotify's.
+    final artHeight = math.max<double>(220, height - 320);
+    return Scaffold(
+      backgroundColor: const Color(0xFF0B0F0C),
+      body: SingleChildScrollView(
+        key: const ValueKey('auth-welcome'),
+        child: Column(
+          children: [
+            SizedBox(
+              height: artHeight,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  RepaintBoundary(
+                    child: AnimatedBuilder(
+                      animation: _waves,
+                      builder: (_, __) => CustomPaint(
+                        painter: _VybeWavesPainter(progress: _waves.value),
+                      ),
+                    ),
+                  ),
+                  Align(
+                    alignment: const Alignment(0, 0.05),
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: _green.withValues(alpha: 0.35),
+                            blurRadius: 40,
+                          ),
+                        ],
+                      ),
+                      child: ClipOval(
+                        child: Image.asset(
+                          'assets/icons/vybe_icon.png',
+                          width: 104,
+                          height: 104,
+                          filterQuality: FilterQuality.high,
+                          excludeFromSemantics: true,
+                        ),
+                      ),
+                    ),
+                  ),
+                  if (canClose)
+                    SafeArea(
+                      child: Align(
+                        alignment: Alignment.topRight,
+                        child: IconButton(
+                          onPressed: _isLoading
+                              ? null
+                              : () => Navigator.of(context).pop(),
+                          icon: const Icon(Icons.close, color: Colors.white70),
+                          tooltip: 'Close',
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            SafeArea(
+              top: false,
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 400),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(28, 4, 28, 24),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Semantics(
+                          header: true,
+                          child: const Text.rich(
+                            TextSpan(
+                              text: 'Millions of songs.\nFree on ',
+                              children: [
+                                TextSpan(
+                                  text: 'Vybe.',
+                                  style: TextStyle(color: _green),
+                                ),
+                              ],
+                            ),
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 32,
+                              fontWeight: FontWeight.w800,
+                              height: 1.12,
+                              letterSpacing: -1.2,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 28),
+                        if (_errorMessage != null)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 16),
+                            child: _AuthNotice(
+                              isError: true,
+                              message: _errorMessage!,
+                            ),
+                          ),
+                        FilledButton.icon(
+                          onPressed: _isLoading ? null : _handleGoogleSignIn,
+                          style: FilledButton.styleFrom(
+                            backgroundColor: Colors.white,
+                            foregroundColor: Colors.black,
+                            disabledBackgroundColor: Colors.white70,
+                            minimumSize: const Size.fromHeight(52),
+                            shape: const StadiumBorder(),
+                            textStyle: const TextStyle(
+                              fontFamily: 'Figtree',
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          icon: _pendingAction == _AuthAction.google
+                              ? _spinner()
+                              : const SizedBox.square(
+                                  dimension: 20,
+                                  child: CustomPaint(
+                                    painter: _GoogleMarkPainter(),
+                                  ),
+                                ),
+                          label: const Text('Continue with Google'),
+                        ),
+                        const SizedBox(height: 12),
+                        OutlinedButton.icon(
+                          onPressed: _isLoading
+                              ? null
+                              : () => _openForm(signUp: true),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.white,
+                            minimumSize: const Size.fromHeight(52),
+                            side: const BorderSide(color: Color(0xFF878787)),
+                            shape: const StadiumBorder(),
+                            textStyle: const TextStyle(
+                              fontFamily: 'Figtree',
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          icon: const Icon(Icons.mail_outline, size: 20),
+                          label: const Text('Sign up with email'),
+                        ),
+                        const SizedBox(height: 8),
+                        TextButton(
+                          onPressed: _isLoading
+                              ? null
+                              : () => _openForm(signUp: false),
+                          style: TextButton.styleFrom(
+                            foregroundColor: Colors.white,
+                            minimumSize: const Size.fromHeight(48),
+                            textStyle: const TextStyle(
+                              fontFamily: 'Figtree',
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          child: const Text('Log in'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final surface = Theme.of(context).colorScheme.surface;
     final canClose = _canClose;
     return PopScope<Object?>(
-      canPop: canClose,
+      canPop: canClose && _showWelcome,
       onPopInvokedWithResult: (didPop, result) {
         if (didPop) return;
         if (_isLoading) return;
-        if (canClose) {
+        if (!_showWelcome) {
+          _backToWelcome();
+        } else if (canClose) {
           Navigator.of(context).pop();
         } else {
           SystemNavigator.pop();
@@ -243,351 +467,391 @@ class _AuthDialogState extends State<AuthDialog> {
       },
       child: Dialog.fullscreen(
         backgroundColor: surface,
-        child: Scaffold(
-          backgroundColor: surface,
-          body: DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [const Color(0xFF15261B), surface, surface],
-                stops: const [0, 0.38, 1],
-              ),
-            ),
-            child: SafeArea(
-              child: SingleChildScrollView(
-                key: const ValueKey('auth-scroll'),
-                controller: _scrollController,
-                keyboardDismissBehavior:
-                    ScrollViewKeyboardDismissBehavior.onDrag,
-                padding: const EdgeInsets.fromLTRB(24, 12, 24, 32),
-                child: Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 400),
-                    child: AutofillGroup(
-                      child: Form(
-                        key: _formKey,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            Row(
-                              children: [
-                                ClipOval(
-                                  child: Image.asset(
-                                    'assets/icons/vybe_icon.png',
-                                    width: 36,
-                                    height: 36,
-                                    excludeFromSemantics: true,
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
-                                const Expanded(
-                                  child: Text(
-                                    'Vybe',
-                                    style: TextStyle(
-                                      fontFamily: 'paytoneOne',
-                                      fontSize: 25,
-                                      color: Colors.white,
-                                      letterSpacing: -0.8,
-                                    ),
-                                  ),
-                                ),
-                                if (canClose)
-                                  IconButton(
-                                    onPressed: _isLoading
-                                        ? null
-                                        : () => Navigator.of(context).pop(),
-                                    icon: const Icon(
-                                      Icons.close,
-                                      color: Colors.white70,
-                                    ),
-                                    tooltip: 'Close',
-                                  ),
-                              ],
-                            ),
-                            const SizedBox(height: 28),
-                            Semantics(
-                              header: true,
-                              child: Text.rich(
-                                TextSpan(
-                                  text: _isSignUp
-                                      ? 'Your music.\n'
-                                      : 'Welcome\n',
-                                  children: [
-                                    TextSpan(
-                                      text: _isSignUp ? 'Your Vybe.' : 'back.',
-                                      style: const TextStyle(color: _green),
-                                    ),
-                                  ],
-                                ),
-                                style: const TextStyle(
-                                  fontSize: 44,
-                                  fontWeight: FontWeight.w800,
-                                  height: 1.06,
-                                  letterSpacing: -1.8,
-                                  color: Colors.white,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 14),
-                            Text(
-                              _isSignUp
-                                  ? 'Sign up to keep your playlists and likes\nwith you, wherever you listen.'
-                                  : 'Your playlists and likes are waiting.\nPick up where you left off.',
-                              style: const TextStyle(
-                                color: _muted,
-                                fontSize: 15,
-                                height: 1.5,
-                              ),
-                            ),
-                            const SizedBox(height: 30),
-                            const _FieldLabel('Email address'),
-                            const SizedBox(height: 8),
-                            Semantics(
-                              label: 'Email address',
-                              child: TextFormField(
-                                key: _emailFieldKey,
-                                controller: _emailController,
-                                enabled: !_isLoading,
-                                keyboardType: TextInputType.emailAddress,
-                                textInputAction: TextInputAction.next,
-                                autofillHints: const [AutofillHints.email],
-                                autocorrect: false,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 16,
-                                ),
-                                decoration: _decoration('name@example.com'),
-                                validator: _validateEmail,
-                                onFieldSubmitted: (_) =>
-                                    _passwordFocus.requestFocus(),
-                              ),
-                            ),
-                            const SizedBox(height: 20),
-                            const _FieldLabel('Password'),
-                            const SizedBox(height: 8),
-                            Semantics(
-                              label: 'Password',
-                              child: TextFormField(
-                                key: const ValueKey('auth-password'),
-                                controller: _passwordController,
-                                focusNode: _passwordFocus,
-                                enabled: !_isLoading,
-                                obscureText: _obscurePassword,
-                                autocorrect: false,
-                                enableSuggestions: false,
-                                textInputAction: TextInputAction.done,
-                                autofillHints: [
-                                  if (_isSignUp)
-                                    AutofillHints.newPassword
-                                  else
-                                    AutofillHints.password,
-                                ],
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 16,
-                                ),
-                                decoration:
-                                    _decoration(
-                                      _isSignUp
-                                          ? 'Create a password'
-                                          : 'Enter your password',
-                                    ).copyWith(
-                                      suffixIcon: IconButton(
-                                        tooltip: _obscurePassword
-                                            ? 'Show password'
-                                            : 'Hide password',
+        child: _showWelcome
+            ? _buildWelcome(context, canClose)
+            : Scaffold(
+                backgroundColor: surface,
+                body: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [const Color(0xFF15261B), surface, surface],
+                      stops: const [0, 0.38, 1],
+                    ),
+                  ),
+                  child: SafeArea(
+                    child: SingleChildScrollView(
+                      key: const ValueKey('auth-scroll'),
+                      controller: _scrollController,
+                      keyboardDismissBehavior:
+                          ScrollViewKeyboardDismissBehavior.onDrag,
+                      padding: const EdgeInsets.fromLTRB(24, 12, 24, 32),
+                      child: Center(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 400),
+                          child: AutofillGroup(
+                            child: Form(
+                              key: _formKey,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  Row(
+                                    children: [
+                                      IconButton(
                                         onPressed: _isLoading
                                             ? null
-                                            : () => setState(
-                                                () => _obscurePassword =
-                                                    !_obscurePassword,
-                                              ),
-                                        icon: Icon(
-                                          _obscurePassword
-                                              ? Icons.visibility_off_outlined
-                                              : Icons.visibility_outlined,
-                                          color: _muted,
-                                          size: 22,
+                                            : _backToWelcome,
+                                        icon: const Icon(
+                                          Icons.arrow_back,
+                                          color: Colors.white,
+                                        ),
+                                        tooltip: 'Back',
+                                      ),
+                                      const SizedBox(width: 4),
+                                      ClipOval(
+                                        child: Image.asset(
+                                          'assets/icons/vybe_icon.png',
+                                          width: 36,
+                                          height: 36,
+                                          excludeFromSemantics: true,
                                         ),
                                       ),
-                                    ),
-                                validator: (value) {
-                                  if (value == null || value.isEmpty)
-                                    return 'Enter your password.';
-                                  if (_isSignUp && value.length < 6)
-                                    return 'Use at least 6 characters.';
-                                  return null;
-                                },
-                                onFieldSubmitted: (_) => _handleEmailAuth(),
-                              ),
-                            ),
-                            if (_isSignUp)
-                              const Padding(
-                                padding: EdgeInsets.only(top: 9),
-                                child: Text(
-                                  'Use at least 6 characters.',
-                                  style: TextStyle(fontSize: 12, color: _muted),
-                                ),
-                              )
-                            else
-                              Align(
-                                alignment: Alignment.centerLeft,
-                                child: TextButton(
-                                  onPressed: _isLoading
-                                      ? null
-                                      : _handleForgotPassword,
-                                  style: TextButton.styleFrom(
-                                    foregroundColor: Colors.white,
-                                    padding: EdgeInsets.zero,
-                                    minimumSize: const Size(48, 48),
-                                  ),
-                                  child: _pendingAction == _AuthAction.reset
-                                      ? _spinner(color: _green)
-                                      : const Text(
-                                          'Forgot password?',
+                                      const SizedBox(width: 10),
+                                      const Expanded(
+                                        child: Text(
+                                          'Vybe',
                                           style: TextStyle(
+                                            fontFamily: 'paytoneOne',
+                                            fontSize: 25,
+                                            color: Colors.white,
+                                            letterSpacing: -0.8,
+                                          ),
+                                        ),
+                                      ),
+                                      if (canClose)
+                                        IconButton(
+                                          onPressed: _isLoading
+                                              ? null
+                                              : () =>
+                                                    Navigator.of(context).pop(),
+                                          icon: const Icon(
+                                            Icons.close,
+                                            color: Colors.white70,
+                                          ),
+                                          tooltip: 'Close',
+                                        ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 28),
+                                  Semantics(
+                                    header: true,
+                                    child: Text.rich(
+                                      TextSpan(
+                                        text: _isSignUp
+                                            ? 'Your music.\n'
+                                            : 'Welcome\n',
+                                        children: [
+                                          TextSpan(
+                                            text: _isSignUp
+                                                ? 'Your Vybe.'
+                                                : 'back.',
+                                            style: const TextStyle(
+                                              color: _green,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      style: const TextStyle(
+                                        fontSize: 44,
+                                        fontWeight: FontWeight.w800,
+                                        height: 1.06,
+                                        letterSpacing: -1.8,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 14),
+                                  Text(
+                                    _isSignUp
+                                        ? 'Sign up to keep your playlists and likes\nwith you, wherever you listen.'
+                                        : 'Your playlists and likes are waiting.\nPick up where you left off.',
+                                    style: const TextStyle(
+                                      color: _muted,
+                                      fontSize: 15,
+                                      height: 1.5,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 30),
+                                  const _FieldLabel('Email address'),
+                                  const SizedBox(height: 8),
+                                  Semantics(
+                                    label: 'Email address',
+                                    child: TextFormField(
+                                      key: _emailFieldKey,
+                                      controller: _emailController,
+                                      enabled: !_isLoading,
+                                      keyboardType: TextInputType.emailAddress,
+                                      textInputAction: TextInputAction.next,
+                                      autofillHints: const [
+                                        AutofillHints.email,
+                                      ],
+                                      autocorrect: false,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 16,
+                                      ),
+                                      decoration: _decoration(
+                                        'name@example.com',
+                                      ),
+                                      validator: _validateEmail,
+                                      onFieldSubmitted: (_) =>
+                                          _passwordFocus.requestFocus(),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 20),
+                                  const _FieldLabel('Password'),
+                                  const SizedBox(height: 8),
+                                  Semantics(
+                                    label: 'Password',
+                                    child: TextFormField(
+                                      key: const ValueKey('auth-password'),
+                                      controller: _passwordController,
+                                      focusNode: _passwordFocus,
+                                      enabled: !_isLoading,
+                                      obscureText: _obscurePassword,
+                                      autocorrect: false,
+                                      enableSuggestions: false,
+                                      textInputAction: TextInputAction.done,
+                                      autofillHints: [
+                                        if (_isSignUp)
+                                          AutofillHints.newPassword
+                                        else
+                                          AutofillHints.password,
+                                      ],
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 16,
+                                      ),
+                                      decoration:
+                                          _decoration(
+                                            _isSignUp
+                                                ? 'Create a password'
+                                                : 'Enter your password',
+                                          ).copyWith(
+                                            suffixIcon: IconButton(
+                                              tooltip: _obscurePassword
+                                                  ? 'Show password'
+                                                  : 'Hide password',
+                                              onPressed: _isLoading
+                                                  ? null
+                                                  : () => setState(
+                                                      () => _obscurePassword =
+                                                          !_obscurePassword,
+                                                    ),
+                                              icon: Icon(
+                                                _obscurePassword
+                                                    ? Icons
+                                                          .visibility_off_outlined
+                                                    : Icons.visibility_outlined,
+                                                color: _muted,
+                                                size: 22,
+                                              ),
+                                            ),
+                                          ),
+                                      validator: (value) {
+                                        if (value == null || value.isEmpty)
+                                          return 'Enter your password.';
+                                        if (_isSignUp && value.length < 6)
+                                          return 'Use at least 6 characters.';
+                                        return null;
+                                      },
+                                      onFieldSubmitted: (_) =>
+                                          _handleEmailAuth(),
+                                    ),
+                                  ),
+                                  if (_isSignUp)
+                                    const Padding(
+                                      padding: EdgeInsets.only(top: 9),
+                                      child: Text(
+                                        'Use at least 6 characters.',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: _muted,
+                                        ),
+                                      ),
+                                    )
+                                  else
+                                    Align(
+                                      alignment: Alignment.centerLeft,
+                                      child: TextButton(
+                                        onPressed: _isLoading
+                                            ? null
+                                            : _handleForgotPassword,
+                                        style: TextButton.styleFrom(
+                                          foregroundColor: Colors.white,
+                                          padding: EdgeInsets.zero,
+                                          minimumSize: const Size(48, 48),
+                                        ),
+                                        child:
+                                            _pendingAction == _AuthAction.reset
+                                            ? _spinner(color: _green)
+                                            : const Text(
+                                                'Forgot password?',
+                                                style: TextStyle(
+                                                  decoration:
+                                                      TextDecoration.underline,
+                                                ),
+                                              ),
+                                      ),
+                                    ),
+                                  if (_infoMessage != null ||
+                                      _errorMessage != null)
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 18),
+                                      child: _AuthNotice(
+                                        isError: _errorMessage != null,
+                                        message: _errorMessage ?? _infoMessage!,
+                                      ),
+                                    ),
+                                  const SizedBox(height: 24),
+                                  FilledButton(
+                                    onPressed: _isLoading
+                                        ? null
+                                        : _handleEmailAuth,
+                                    style: FilledButton.styleFrom(
+                                      backgroundColor: _green,
+                                      foregroundColor: Colors.black,
+                                      disabledBackgroundColor: _green
+                                          .withValues(alpha: 0.45),
+                                      disabledForegroundColor: Colors.black,
+                                      minimumSize: const Size.fromHeight(56),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 24,
+                                        vertical: 16,
+                                      ),
+                                      shape: const StadiumBorder(),
+                                      textStyle: const TextStyle(
+                                        fontFamily: 'Figtree',
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                    child: _pendingAction == _AuthAction.email
+                                        ? _spinner()
+                                        : Text(
+                                            _isSignUp
+                                                ? 'Create account'
+                                                : 'Log in',
+                                          ),
+                                  ),
+                                  const Padding(
+                                    padding: EdgeInsets.symmetric(vertical: 22),
+                                    child: Row(
+                                      children: [
+                                        Expanded(
+                                          child: Divider(
+                                            color: Color(0xFF363636),
+                                          ),
+                                        ),
+                                        Padding(
+                                          padding: EdgeInsets.symmetric(
+                                            horizontal: 16,
+                                          ),
+                                          child: Text(
+                                            'or',
+                                            style: TextStyle(
+                                              color: _muted,
+                                              fontSize: 13,
+                                            ),
+                                          ),
+                                        ),
+                                        Expanded(
+                                          child: Divider(
+                                            color: Color(0xFF363636),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  OutlinedButton.icon(
+                                    onPressed: _isLoading
+                                        ? null
+                                        : _handleGoogleSignIn,
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: Colors.white,
+                                      minimumSize: const Size.fromHeight(56),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 20,
+                                        vertical: 16,
+                                      ),
+                                      side: const BorderSide(
+                                        color: Color(0xFF727272),
+                                      ),
+                                      shape: const StadiumBorder(),
+                                      textStyle: const TextStyle(
+                                        fontFamily: 'Figtree',
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                    icon: _pendingAction == _AuthAction.google
+                                        ? _spinner(color: Colors.white)
+                                        : const SizedBox.square(
+                                            dimension: 20,
+                                            child: CustomPaint(
+                                              painter: _GoogleMarkPainter(),
+                                            ),
+                                          ),
+                                    label: const Text(
+                                      'Continue with Google',
+                                      textAlign: TextAlign.center,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 26),
+                                  Wrap(
+                                    alignment: WrapAlignment.center,
+                                    crossAxisAlignment:
+                                        WrapCrossAlignment.center,
+                                    spacing: 3,
+                                    children: [
+                                      Text(
+                                        _isSignUp
+                                            ? 'Already have an account?'
+                                            : 'New to Vybe?',
+                                        style: const TextStyle(
+                                          color: _muted,
+                                          fontSize: 14,
+                                        ),
+                                      ),
+                                      TextButton(
+                                        onPressed: _isLoading
+                                            ? null
+                                            : _switchMode,
+                                        style: TextButton.styleFrom(
+                                          foregroundColor: Colors.white,
+                                        ),
+                                        child: Text(
+                                          _isSignUp ? 'Log in' : 'Sign up free',
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w700,
                                             decoration:
                                                 TextDecoration.underline,
                                           ),
                                         ),
-                                ),
-                              ),
-                            if (_infoMessage != null || _errorMessage != null)
-                              Padding(
-                                padding: const EdgeInsets.only(top: 18),
-                                child: _AuthNotice(
-                                  isError: _errorMessage != null,
-                                  message: _errorMessage ?? _infoMessage!,
-                                ),
-                              ),
-                            const SizedBox(height: 24),
-                            FilledButton(
-                              onPressed: _isLoading ? null : _handleEmailAuth,
-                              style: FilledButton.styleFrom(
-                                backgroundColor: _green,
-                                foregroundColor: Colors.black,
-                                disabledBackgroundColor: _green.withValues(
-                                  alpha: 0.45,
-                                ),
-                                disabledForegroundColor: Colors.black,
-                                minimumSize: const Size.fromHeight(56),
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 24,
-                                  vertical: 16,
-                                ),
-                                shape: const StadiumBorder(),
-                                textStyle: const TextStyle(
-                                  fontFamily: 'Figtree',
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                              child: _pendingAction == _AuthAction.email
-                                  ? _spinner()
-                                  : Text(
-                                      _isSignUp ? 'Create account' : 'Log in',
-                                    ),
-                            ),
-                            const Padding(
-                              padding: EdgeInsets.symmetric(vertical: 22),
-                              child: Row(
-                                children: [
-                                  Expanded(
-                                    child: Divider(color: Color(0xFF363636)),
-                                  ),
-                                  Padding(
-                                    padding: EdgeInsets.symmetric(
-                                      horizontal: 16,
-                                    ),
-                                    child: Text(
-                                      'or',
-                                      style: TextStyle(
-                                        color: _muted,
-                                        fontSize: 13,
                                       ),
-                                    ),
-                                  ),
-                                  Expanded(
-                                    child: Divider(color: Color(0xFF363636)),
+                                    ],
                                   ),
                                 ],
                               ),
                             ),
-                            OutlinedButton.icon(
-                              onPressed: _isLoading
-                                  ? null
-                                  : _handleGoogleSignIn,
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: Colors.white,
-                                minimumSize: const Size.fromHeight(56),
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 20,
-                                  vertical: 16,
-                                ),
-                                side: const BorderSide(
-                                  color: Color(0xFF727272),
-                                ),
-                                shape: const StadiumBorder(),
-                                textStyle: const TextStyle(
-                                  fontFamily: 'Figtree',
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                              icon: _pendingAction == _AuthAction.google
-                                  ? _spinner(color: Colors.white)
-                                  : const SizedBox.square(
-                                      dimension: 20,
-                                      child: CustomPaint(
-                                        painter: _GoogleMarkPainter(),
-                                      ),
-                                    ),
-                              label: const Text(
-                                'Continue with Google',
-                                textAlign: TextAlign.center,
-                              ),
-                            ),
-                            const SizedBox(height: 26),
-                            Wrap(
-                              alignment: WrapAlignment.center,
-                              crossAxisAlignment: WrapCrossAlignment.center,
-                              spacing: 3,
-                              children: [
-                                Text(
-                                  _isSignUp
-                                      ? 'Already have an account?'
-                                      : 'New to Vybe?',
-                                  style: const TextStyle(
-                                    color: _muted,
-                                    fontSize: 14,
-                                  ),
-                                ),
-                                TextButton(
-                                  onPressed: _isLoading ? null : _switchMode,
-                                  style: TextButton.styleFrom(
-                                    foregroundColor: Colors.white,
-                                  ),
-                                  child: Text(
-                                    _isSignUp ? 'Log in' : 'Sign up free',
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w700,
-                                      decoration: TextDecoration.underline,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
+                          ),
                         ),
                       ),
                     ),
                   ),
                 ),
               ),
-            ),
-          ),
-        ),
       ),
     );
   }
@@ -695,4 +959,50 @@ class _GoogleMarkPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_GoogleMarkPainter oldDelegate) => false;
+}
+
+/// The welcome artwork: green sound-wave rings that ripple slowly out from
+/// the Vybe mark and fade into the page below.
+class _VybeWavesPainter extends CustomPainter {
+  const _VybeWavesPainter({required this.progress});
+
+  final double progress;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    // Rings stay inside the artwork, so they fade out under the headline.
+    canvas.clipRect(Offset.zero & size);
+    final center = Offset(size.width / 2, size.height * 0.525);
+    final gap = size.shortestSide * 0.16;
+    final maxRadius = math.sqrt(
+      math.pow(size.width / 2, 2) + math.pow(size.height, 2),
+    );
+    final ring = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = gap * 0.52;
+
+    // Each ring moves out by one gap per loop, so the pattern repeats.
+    for (var radius = 70 + progress * gap; radius < maxRadius; radius += gap) {
+      final fade = (1 - radius / maxRadius).clamp(0.0, 1.0);
+      ring.color = _green.withValues(alpha: 0.10 + 0.55 * fade * fade);
+      canvas.drawCircle(center, radius, ring);
+    }
+
+    // Blend the rings into the page background at the bottom.
+    final rect = Offset.zero & size;
+    canvas.drawRect(
+      rect,
+      Paint()
+        ..shader = const LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Color(0x000B0F0C), Color(0x000B0F0C), Color(0xFF0B0F0C)],
+          stops: [0, 0.62, 1],
+        ).createShader(rect),
+    );
+  }
+
+  @override
+  bool shouldRepaint(_VybeWavesPainter oldDelegate) =>
+      oldDelegate.progress != progress;
 }

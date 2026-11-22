@@ -169,8 +169,8 @@ void main() {
   });
 
   group('Settings & Queue Behavior Tests', () {
-    test('playNextSongAutomatically defaults to false', () {
-      expect(playNextSongAutomatically.value, isFalse);
+    test('playNextSongAutomatically defaults to true', () {
+      expect(playNextSongAutomatically.value, isTrue);
     });
   });
 }

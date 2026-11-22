@@ -19,7 +19,6 @@ import 'package:vybe/utilities/artwork_provider.dart';
 import 'package:vybe/utilities/flutter_toast.dart';
 import 'package:vybe/widgets/artist_bar.dart';
 import 'package:vybe/widgets/browse_all_grid.dart';
-import 'package:vybe/widgets/custom_bar.dart';
 import 'package:vybe/widgets/custom_search_bar.dart';
 import 'package:vybe/widgets/mini_player_bottom_space.dart';
 import 'package:vybe/widgets/playlist_bar.dart';
@@ -62,7 +61,9 @@ Map<String, dynamic>? parseStringifiedSongMap(dynamic raw) {
   try {
     final decoded = jsonDecode(str);
     if (decoded is Map) {
-      final title = (decoded['title'] ?? decoded['name'] ?? '').toString().trim();
+      final title = (decoded['title'] ?? decoded['name'] ?? '')
+          .toString()
+          .trim();
       if (title.isEmpty) return null;
       return Map<String, dynamic>.from(decoded);
     }
@@ -105,8 +106,9 @@ Map<String, dynamic>? parseStringifiedSongMap(dynamic raw) {
     final match = matches[i];
     final key = match.group(1)!.toLowerCase();
     final valueStart = match.end;
-    final valueEnd =
-        (i + 1 < matches.length) ? matches[i + 1].start : content.length;
+    final valueEnd = (i + 1 < matches.length)
+        ? matches[i + 1].start
+        : content.length;
 
     var val = content.substring(valueStart, valueEnd).trim();
     if (val.endsWith(',')) {
@@ -132,14 +134,15 @@ Map<String, dynamic>? parseStringifiedSongMap(dynamic raw) {
     final title = (result['title'] ?? result['name'] ?? '').toString().trim();
     if (title.isEmpty) return null;
     final ytid = (result['ytid'] ?? result['id'] ?? '').toString().trim();
-    var imageUrl = (result['image'] ??
-            result['lowResImage'] ??
-            result['highResImage'] ??
-            result['artworkPath'] ??
-            result['artWorkPath'] ??
-            '')
-        .toString()
-        .trim();
+    var imageUrl =
+        (result['image'] ??
+                result['lowResImage'] ??
+                result['highResImage'] ??
+                result['artworkPath'] ??
+                result['artWorkPath'] ??
+                '')
+            .toString()
+            .trim();
 
     if ((imageUrl.isEmpty || imageUrl == 'null') && ytid.isNotEmpty) {
       imageUrl = 'https://i.ytimg.com/vi/$ytid/mqdefault.jpg';
@@ -154,11 +157,12 @@ Map<String, dynamic>? parseStringifiedSongMap(dynamic raw) {
         orElse: () => null,
       );
       if (recent != null && recent is Map) {
-        imageUrl = (recent['image'] ??
-                recent['lowResImage'] ??
-                recent['highResImage'] ??
-                recent['artworkPath'])
-            ?.toString() ??
+        imageUrl =
+            (recent['image'] ??
+                    recent['lowResImage'] ??
+                    recent['highResImage'] ??
+                    recent['artworkPath'])
+                ?.toString() ??
             '';
         if (result['artist'] == null ||
             result['artist'].toString().trim().isEmpty) {
@@ -191,7 +195,9 @@ List<dynamic> sanitizeSearchHistory(List rawHistory) {
   for (final item in rawHistory) {
     if (item == null) continue;
     dynamic resolved = item;
-    if (item is String && item.trim().startsWith('{') && (item.contains('title:') || item.contains('name:'))) {
+    if (item is String &&
+        item.trim().startsWith('{') &&
+        (item.contains('title:') || item.contains('name:'))) {
       final parsed = parseStringifiedSongMap(item);
       if (parsed != null) {
         resolved = parsed;
@@ -203,8 +209,10 @@ List<dynamic> sanitizeSearchHistory(List rawHistory) {
       continue;
     }
 
-    final title =
-        (resolved['title'] ?? resolved['name'] ?? '').toString().toLowerCase().trim();
+    final title = (resolved['title'] ?? resolved['name'] ?? '')
+        .toString()
+        .toLowerCase()
+        .trim();
     if (title.isEmpty) {
       continue;
     }
@@ -226,8 +234,7 @@ List _loadAndSanitizeSearchHistory() {
     final rawList = raw is List ? raw : [];
     final sanitized = sanitizeSearchHistory(rawList);
     // If raw list had any stringified maps or plain search queries, persist the cured song-only list to Hive
-    if (rawList.length != sanitized.length ||
-        rawList.any((e) => e is String)) {
+    if (rawList.length != sanitized.length || rawList.any((e) => e is String)) {
       unawaited(addOrUpdateData<List>('user', 'searchHistory', sanitized));
     }
     return sanitized;
@@ -256,6 +263,12 @@ class _SearchPageState extends State<SearchPage> {
   List<dynamic> _playlistsSearchResult = [];
   List<RadioStation> _radioStationsSearchResult = [];
   List<String> _suggestionsList = [];
+
+  /// Songs shown under the suggestions while typing, before submitting.
+  List<dynamic> _liveSongs = [];
+
+  /// Which result type the chips above the results show; null shows all.
+  String? _resultFilter;
   Timer? _debounce;
   int _latestSuggestionRequest = 0;
   int _latestSearchRequest = 0;
@@ -285,7 +298,25 @@ class _SearchPageState extends State<SearchPage> {
     _playlistsSearchResult = [];
     _radioStationsSearchResult = [];
     _suggestionsList = [];
+    _liveSongs = [];
+    _resultFilter = null;
     if (mounted) setState(() {});
+  }
+
+  /// Puts [suggestion] in the field to keep refining it, without searching.
+  void _fillQuery(String suggestion) {
+    final text = '$suggestion ';
+    _searchBar.value = TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
+    );
+    _inputNode.requestFocus();
+    _onQueryChanged(text);
+  }
+
+  void _playSong(dynamic song) {
+    _addSongToRecents(song);
+    audioHandler.addPlaylistToQueue([song], replace: true, startIndex: 0);
   }
 
   void _addSongToRecents(dynamic song) {
@@ -293,20 +324,21 @@ class _SearchPageState extends State<SearchPage> {
     final map = song is Map
         ? Map<String, dynamic>.from(song)
         : (song is String &&
-                song.trim().startsWith('{') &&
-                (song.contains('title:') || song.contains('name:'))
-            ? parseStringifiedSongMap(song)
-            : null);
+                  song.trim().startsWith('{') &&
+                  (song.contains('title:') || song.contains('name:'))
+              ? parseStringifiedSongMap(song)
+              : null);
     final title = (map?['title'] ?? song.toString()).trim();
     if (title.isEmpty) return;
 
     final ytid = map?['ytid']?.toString() ?? '';
-    var image = (map?['image'] ??
-            map?['lowResImage'] ??
-            map?['highResImage'] ??
-            map?['artworkPath'] ??
-            map?['artWorkPath'])
-        ?.toString() ??
+    var image =
+        (map?['image'] ??
+                map?['lowResImage'] ??
+                map?['highResImage'] ??
+                map?['artworkPath'] ??
+                map?['artWorkPath'])
+            ?.toString() ??
         '';
     if (image.contains('/sddefault.jpg')) {
       image = image.replaceAll('/sddefault.jpg', '/mqdefault.jpg');
@@ -348,7 +380,10 @@ class _SearchPageState extends State<SearchPage> {
     final entry = {
       'title': title,
       'artist': 'Artist',
-      'image': (artist['image'] ?? artist['lowResImage'] ?? artist['highResImage'])?.toString() ?? '',
+      'image':
+          (artist['image'] ?? artist['lowResImage'] ?? artist['highResImage'])
+              ?.toString() ??
+          '',
       'ytid': ytid,
       'isArtist': true,
     };
@@ -385,8 +420,12 @@ class _SearchPageState extends State<SearchPage> {
         if (target is Map && e is Map) {
           final tYtid = target['ytid']?.toString() ?? '';
           final eYtid = e['ytid']?.toString() ?? '';
-          if (tYtid.isNotEmpty && eYtid.isNotEmpty && tYtid == eYtid) return true;
-          final tTitle = (target['title'] ?? '').toString().toLowerCase().trim();
+          if (tYtid.isNotEmpty && eYtid.isNotEmpty && tYtid == eYtid)
+            return true;
+          final tTitle = (target['title'] ?? '')
+              .toString()
+              .toLowerCase()
+              .trim();
           final eTitle = (e['title'] ?? '').toString().toLowerCase().trim();
           if (tTitle.isNotEmpty && tTitle == eTitle) return true;
         } else if (target is String && e is String) {
@@ -445,11 +484,7 @@ class _SearchPageState extends State<SearchPage> {
       );
       if (match != null && match is Map) {
         _addSongToRecents(match);
-        audioHandler.addPlaylistToQueue(
-          [match],
-          replace: true,
-          startIndex: 0,
-        );
+        audioHandler.addPlaylistToQueue([match], replace: true, startIndex: 0);
       } else {
         _submitSearch(resolved);
       }
@@ -476,6 +511,8 @@ class _SearchPageState extends State<SearchPage> {
     _latestSuggestionRequest++;
     _debounce?.cancel();
     _suggestionsList = [];
+    _liveSongs = [];
+    _resultFilter = null;
     _editingQuery = false;
     _inputNode.unfocus();
     setState(() {});
@@ -553,6 +590,8 @@ class _SearchPageState extends State<SearchPage> {
 
           if (!mounted || requestId != _latestSearchRequest) return;
           setState(() => _songsSearchResult = songs);
+          // The top results are the ones usually tapped: get them ready.
+          prefetchSongStreamUrls(songs, limit: 2);
         } catch (e, stackTrace) {
           logger.log(
             'Error while searching online songs',
@@ -668,6 +707,7 @@ class _SearchPageState extends State<SearchPage> {
     setState(() {
       _editingQuery = value.trim().isNotEmpty;
       _suggestionsList = [];
+      if (value.trim().isEmpty) _liveSongs = [];
       _songsSearchResult = [];
       _artistsSearchResult = [];
       _albumsSearchResult = [];
@@ -677,15 +717,29 @@ class _SearchPageState extends State<SearchPage> {
     final query = value.trim();
     if (query.isEmpty) return;
     _debounce = Timer(const Duration(milliseconds: 300), () async {
+      bool stillCurrent() =>
+          mounted &&
+          suggestionRequest == _latestSuggestionRequest &&
+          _searchBar.text.trim() == query &&
+          _editingQuery;
+
+      // Songs appear under the suggestions as you type, like Spotify.
+      unawaited(
+        (widget.songSearch?.call(query) ?? fetchSongsList(query))
+            .then((songs) {
+              if (!stillCurrent()) return;
+              setState(() => _liveSongs = songs);
+              prefetchSongStreamUrls(songs, limit: 1);
+            })
+            .catchError((Object error) {
+              logger.log('Live song results unavailable', error: error);
+            }),
+      );
       try {
         final suggestions =
             await (widget.suggestionSearch?.call(query) ??
                 getSearchSuggestions(query));
-        if (!mounted ||
-            suggestionRequest != _latestSuggestionRequest ||
-            _searchBar.text.trim() != query ||
-            !_editingQuery)
-          return;
+        if (!stillCurrent()) return;
         setState(() => _suggestionsList = suggestions.toSet().toList());
       } catch (error, stack) {
         if (!mounted || suggestionRequest != _latestSuggestionRequest) return;
@@ -712,68 +766,66 @@ class _SearchPageState extends State<SearchPage> {
         }
       },
       child: Scaffold(
-        appBar: AppBar(title: Text(context.l10n!.search)),
-        body: SingleChildScrollView(
-          padding: commonSingleChildScrollViewPadding,
-          child: Column(
-            children: <Widget>[
-              LayoutBuilder(
-                builder: (context, constraints) {
-                  final isWide = constraints.maxWidth > 600;
-                  final bar = ConstrainedBox(
-                    constraints: BoxConstraints(
-                      maxWidth: isWide ? 600 : double.infinity,
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: CustomSearchBar(
-                            prominent: true,
-                            loadingProgressNotifier: _fetchingSongs,
-                            controller: _searchBar,
-                            focusNode: _inputNode,
-                            labelText: '${context.l10n!.search}...',
-                            onChanged: _onQueryChanged,
-                            onSubmitted: (String value) {
-                              _submitSearch();
-                            },
-                          ),
-                        ),
-                        if (isSearching) ...[
-                          const SizedBox(width: 8),
-                          TextButton(
-                            onPressed: _cancelSearch,
-                            style: TextButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
+        // While searching the field takes over the top, with a back arrow,
+        // like Spotify. Otherwise the page shows its title and a white field.
+        appBar: isSearching ? null : AppBar(title: Text(context.l10n!.search)),
+        body: SafeArea(
+          bottom: false,
+          top: isSearching,
+          child: SingleChildScrollView(
+            padding: commonSingleChildScrollViewPadding,
+            child: Column(
+              children: <Widget>[
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final isWide = constraints.maxWidth > 600;
+                    final bar = ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxWidth: isWide ? 600 : double.infinity,
+                      ),
+                      child: Row(
+                        children: [
+                          if (isSearching) ...[
+                            IconButton(
+                              onPressed: _cancelSearch,
+                              tooltip: context.l10n!.back,
+                              icon: const Icon(
+                                FluentIcons.arrow_left_24_regular,
                               ),
                             ),
-                            child: Text(
-                              context.l10n!.cancel,
-                              style: TextStyle(
-                                color: Theme.of(context).colorScheme.onSurface,
-                                fontWeight: FontWeight.w600,
-                              ),
+                            const SizedBox(width: 4),
+                          ],
+                          Expanded(
+                            child: CustomSearchBar(
+                              prominent: !isSearching,
+                              loadingProgressNotifier: _fetchingSongs,
+                              controller: _searchBar,
+                              focusNode: _inputNode,
+                              labelText: context.l10n!.searchPlaceholder,
+                              onChanged: _onQueryChanged,
+                              onSubmitted: (String value) {
+                                _submitSearch();
+                              },
                             ),
                           ),
                         ],
-                      ],
-                    ),
-                  );
-                  if (isWide) {
-                    return Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [bar],
+                      ),
                     );
-                  } else {
-                    return bar;
-                  }
-                },
-              ),
+                    if (isWide) {
+                      return Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [bar],
+                      );
+                    } else {
+                      return bar;
+                    }
+                  },
+                ),
 
-              _buildSearchBody(context, primaryColor),
-              const MiniPlayerBottomSpace(),
-            ],
+                _buildSearchBody(context, primaryColor),
+                const MiniPlayerBottomSpace(),
+              ],
+            ),
           ),
         ),
       ),
@@ -788,19 +840,28 @@ class _SearchPageState extends State<SearchPage> {
       _radioStationsSearchResult.isNotEmpty;
 
   Widget _buildSearchBody(BuildContext context, Color primaryColor) {
-    // 1. Live autocomplete suggestions while user is typing
+    // 1. While typing: suggestions, then matching songs right below them.
     if (_editingQuery && _searchBar.text.trim().isNotEmpty) {
-      if (_suggestionsList.isEmpty) {
-        return const SizedBox.shrink();
-      }
+      final typed = _searchBar.text.trim();
       return Column(
         children: [
-          for (var index = 0; index < _suggestionsList.length; index++)
-            CustomBar(
-              _suggestionsList[index],
-              FluentIcons.search_24_regular,
-              borderRadius: getItemBorderRadius(index, _suggestionsList.length),
-              onTap: () => _submitSearch(_suggestionsList[index]),
+          for (final suggestion in _suggestionsList.take(5))
+            _SuggestionTile(
+              suggestion: suggestion,
+              typed: typed,
+              onTap: () => _submitSearch(suggestion),
+              onFill: () => _fillQuery(suggestion),
+            ),
+          if (_suggestionsList.isNotEmpty && _liveSongs.isNotEmpty)
+            const SizedBox(height: 8),
+          for (final song in _liveSongs.take(8))
+            SongBar(
+              song,
+              true,
+              key: ValueKey('live-song-$typed-${song['ytid']}'),
+              typeLabel: context.l10n!.songType,
+              showLikeButton: true,
+              onPlay: () => _playSong(song),
             ),
         ],
       );
@@ -813,8 +874,8 @@ class _SearchPageState extends State<SearchPage> {
           padding: const EdgeInsets.symmetric(vertical: 32),
           child: _fetchingSongs.value
               ? const Center(child: CircularProgressIndicator())
-              : const Text(
-                  'No results found. Try another search.',
+              : Text(
+                  context.l10n!.searchNoResults,
                   textAlign: TextAlign.center,
                 ),
         );
@@ -844,7 +905,7 @@ class _SearchPageState extends State<SearchPage> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      'Recent searches',
+                      context.l10n!.recentSearches,
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.w700,
@@ -892,11 +953,68 @@ class _SearchPageState extends State<SearchPage> {
     return BrowseAllGrid(onTap: _submitSearch);
   }
 
+  Widget _buildFilterChips(BuildContext context) {
+    final l10n = context.l10n!;
+    final colorScheme = Theme.of(context).colorScheme;
+    final filters = <(String?, String)>[
+      (null, l10n.allResults),
+      if (_songsSearchResult.isNotEmpty) ('songs', l10n.songs),
+      if (_artistsSearchResult.isNotEmpty) ('artists', l10n.artists),
+      if (_albumsSearchResult.isNotEmpty) ('albums', l10n.albums),
+      if (_playlistsSearchResult.isNotEmpty) ('playlists', l10n.playlists),
+      if (_radioStationsSearchResult.isNotEmpty) ('radio', l10n.radioStations),
+    ];
+    if (filters.length < 3) return const SizedBox.shrink();
+    return SizedBox(
+      height: 44,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: filters.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        itemBuilder: (context, index) {
+          final (value, label) = filters[index];
+          final selected = _resultFilter == value;
+          return Center(
+            child: Material(
+              color: selected
+                  ? colorScheme.primary
+                  : colorScheme.surfaceContainerHigh,
+              shape: const StadiumBorder(),
+              child: InkWell(
+                customBorder: const StadiumBorder(),
+                onTap: () => setState(() => _resultFilter = value),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
+                  child: Text(
+                    label,
+                    style: TextStyle(
+                      color: selected
+                          ? colorScheme.onPrimary
+                          : colorScheme.onSurface,
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  bool _showsResults(String type) =>
+      _resultFilter == null || _resultFilter == type;
+
   Widget _buildSearchResults(BuildContext context, Color primaryColor) {
-    final widgets = <Widget>[];
+    final widgets = <Widget>[_buildFilterChips(context)];
 
     // Songs section
-    if (_songsSearchResult.isNotEmpty) {
+    if (_songsSearchResult.isNotEmpty && _showsResults('songs')) {
       widgets.add(
         SectionTitle(
           context.l10n!.songs,
@@ -919,23 +1037,17 @@ class _SearchPageState extends State<SearchPage> {
             key: ValueKey(
               'search-song-${_searchBar.text.trim()}-${song['ytid'] ?? index}',
             ),
-            showMusicDuration: true,
             borderRadius: borderRadius,
-            onPlay: () {
-              _addSongToRecents(song);
-              audioHandler.addPlaylistToQueue(
-                [song],
-                replace: true,
-                startIndex: 0,
-              );
-            },
+            typeLabel: context.l10n!.songType,
+            showLikeButton: true,
+            onPlay: () => _playSong(song),
           ),
         );
       }
     }
 
     // Artists section
-    if (_artistsSearchResult.isNotEmpty) {
+    if (_artistsSearchResult.isNotEmpty && _showsResults('artists')) {
       widgets.add(
         SectionTitle(
           context.l10n!.artists,
@@ -970,7 +1082,7 @@ class _SearchPageState extends State<SearchPage> {
     }
 
     // Albums section
-    if (_albumsSearchResult.isNotEmpty) {
+    if (_albumsSearchResult.isNotEmpty && _showsResults('albums')) {
       widgets.add(
         SectionTitle(
           context.l10n!.albums,
@@ -1002,7 +1114,7 @@ class _SearchPageState extends State<SearchPage> {
     }
 
     // Playlists section
-    if (_playlistsSearchResult.isNotEmpty) {
+    if (_playlistsSearchResult.isNotEmpty && _showsResults('playlists')) {
       widgets.add(
         SectionTitle(
           context.l10n!.playlists,
@@ -1037,7 +1149,7 @@ class _SearchPageState extends State<SearchPage> {
     }
 
     // Radio Stations section
-    if (_radioStationsSearchResult.isNotEmpty) {
+    if (_radioStationsSearchResult.isNotEmpty && _showsResults('radio')) {
       widgets.add(
         SectionTitle(
           context.l10n!.radioStations,
@@ -1126,13 +1238,14 @@ class _RecentSearchTile extends StatelessWidget {
             .trim();
         isSong = true;
       }
-      imageUrl = (map['image'] ??
-              map['lowResImage'] ??
-              map['highResImage'] ??
-              map['artworkPath'] ??
-              map['artWorkPath'])
-          ?.toString()
-          .trim();
+      imageUrl =
+          (map['image'] ??
+                  map['lowResImage'] ??
+                  map['highResImage'] ??
+                  map['artworkPath'] ??
+                  map['artWorkPath'])
+              ?.toString()
+              .trim();
 
       final ytid = (map['ytid'] ?? map['id'] ?? '').toString().trim();
       if ((imageUrl == null || imageUrl.isEmpty || imageUrl == 'null') &&
@@ -1149,12 +1262,13 @@ class _RecentSearchTile extends StatelessWidget {
           orElse: () => null,
         );
         if (recent != null && recent is Map) {
-          imageUrl = (recent['image'] ??
-                  recent['lowResImage'] ??
-                  recent['highResImage'] ??
-                  recent['artworkPath'])
-              ?.toString()
-              .trim();
+          imageUrl =
+              (recent['image'] ??
+                      recent['lowResImage'] ??
+                      recent['highResImage'] ??
+                      recent['artworkPath'])
+                  ?.toString()
+                  .trim();
           if (subtitle == null || subtitle == 'Song') {
             subtitle = recent['artist']?.toString().trim();
           }
@@ -1165,17 +1279,19 @@ class _RecentSearchTile extends StatelessWidget {
       final match = userRecentlyPlayed.value.firstWhere(
         (s) =>
             s is Map &&
-            s['title']?.toString().toLowerCase() == resolved.toLowerCase().trim(),
+            s['title']?.toString().toLowerCase() ==
+                resolved.toLowerCase().trim(),
         orElse: () => null,
       );
       if (match != null && match is Map) {
         subtitle = match['artist']?.toString().trim();
-        imageUrl = (match['image'] ??
-                match['lowResImage'] ??
-                match['highResImage'] ??
-                match['artworkPath'])
-            ?.toString()
-            .trim();
+        imageUrl =
+            (match['image'] ??
+                    match['lowResImage'] ??
+                    match['highResImage'] ??
+                    match['artworkPath'])
+                ?.toString()
+                .trim();
         isSong = true;
       } else {
         subtitle = 'Search';
@@ -1208,14 +1324,20 @@ class _RecentSearchTile extends StatelessWidget {
             width: artSize,
             height: artSize,
             fit: BoxFit.cover,
-            errorBuilder: (_, __, ___) =>
-                _buildPlaceholder(colorScheme, isSong: isSong, isArtist: isArtist),
+            errorBuilder: (_, __, ___) => _buildPlaceholder(
+              colorScheme,
+              isSong: isSong,
+              isArtist: isArtist,
+            ),
           ),
         ),
       );
     } else {
-      leadingWidget =
-          _buildPlaceholder(colorScheme, isSong: isSong, isArtist: isArtist);
+      leadingWidget = _buildPlaceholder(
+        colorScheme,
+        isSong: isSong,
+        isArtist: isArtist,
+      );
     }
 
     return InkWell(
@@ -1289,10 +1411,90 @@ class _RecentSearchTile extends StatelessWidget {
         isArtist
             ? FluentIcons.person_24_regular
             : isSong
-                ? FluentIcons.music_note_2_24_regular
-                : FluentIcons.search_24_regular,
+            ? FluentIcons.music_note_2_24_regular
+            : FluentIcons.search_24_regular,
         color: colorScheme.onSurfaceVariant,
         size: 24,
+      ),
+    );
+  }
+}
+
+/// One autocomplete row: the typed part dimmed and the rest bright, so the
+/// completion stands out, with an arrow that copies it into the field to keep
+/// typing instead of searching.
+class _SuggestionTile extends StatelessWidget {
+  const _SuggestionTile({
+    required this.suggestion,
+    required this.typed,
+    required this.onTap,
+    required this.onFill,
+  });
+
+  final String suggestion;
+  final String typed;
+  final VoidCallback onTap;
+  final VoidCallback onFill;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final startsWithTyped = suggestion.toLowerCase().startsWith(
+      typed.toLowerCase(),
+    );
+    final typedPart = startsWithTyped
+        ? suggestion.substring(0, typed.length)
+        : '';
+    final rest = startsWithTyped
+        ? suggestion.substring(typed.length)
+        : suggestion;
+
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(6),
+      child: Padding(
+        padding: const EdgeInsets.only(left: 4, top: 2, bottom: 2),
+        child: Row(
+          children: [
+            Icon(
+              FluentIcons.search_24_regular,
+              color: colorScheme.onSurfaceVariant,
+              size: 22,
+            ),
+            const SizedBox(width: 18),
+            Expanded(
+              child: Text.rich(
+                TextSpan(
+                  children: [
+                    TextSpan(
+                      text: typedPart,
+                      style: TextStyle(color: colorScheme.onSurfaceVariant),
+                    ),
+                    TextSpan(
+                      text: rest,
+                      style: TextStyle(
+                        color: colorScheme.onSurface,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 16),
+              ),
+            ),
+            IconButton(
+              onPressed: onFill,
+              tooltip: suggestion,
+              icon: Icon(
+                FluentIcons.arrow_up_left_24_regular,
+                color: colorScheme.onSurfaceVariant,
+                size: 20,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

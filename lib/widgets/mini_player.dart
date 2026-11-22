@@ -56,10 +56,9 @@ class MiniPlayer extends StatelessWidget {
               final state = stateSnapshot.data;
               if (state == null) return const SizedBox.shrink();
 
-              final hasNext =
-                  state.queue.length > 1 &&
-                  (state.playbackState.queueIndex ?? 0) <
-                      state.queue.length - 1;
+              // Includes autoplay, so a single searched song can still skip
+              // ahead to a similar one.
+              final hasNext = audioHandler.canSkipToNext;
 
               return _MiniPlayerBody(
                 colorScheme: colorScheme,
@@ -502,29 +501,11 @@ class _CircularPlayButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final processingState = playbackState.processingState;
+    // No spinner while loading: the loading state already says whether the
+    // song is about to play, so show pause right away, like Spotify.
     final isPlaying = playbackState.playing;
-    final isLoading =
-        processingState == AudioProcessingState.loading ||
-        processingState == AudioProcessingState.buffering;
-    final isCompleted = processingState == AudioProcessingState.completed;
-
-    if (isLoading) {
-      return const SizedBox(
-        width: 38,
-        height: 38,
-        child: Center(
-          child: SizedBox(
-            width: 20,
-            height: 20,
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-            ),
-          ),
-        ),
-      );
-    }
+    final isCompleted =
+        playbackState.processingState == AudioProcessingState.completed;
 
     return IconButton(
       onPressed: isCompleted

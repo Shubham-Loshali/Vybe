@@ -640,10 +640,11 @@ Future<void> showAddToPlaylistDialog(
   if (song == null && (songs == null || songs.isEmpty)) return;
 
   final targetId = (target['ytid'] ?? target['id'])?.toString() ?? '';
-  if (target['isCollaborative'] == true) {
+  if (target['isCollaborative'] == true &&
+      CollaborativePlaylistService.instance.isSignedIn) {
     showToast(
       parentContext,
-      'Adding to the shared playlist…',
+      parentContext.l10n!.sharedPlaylistAdding,
       icon: FluentIcons.info_20_regular,
       duration: const Duration(seconds: 8),
     );

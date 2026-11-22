@@ -266,6 +266,63 @@ class MusicClient {
     return songs;
   }
 
+  /// The YouTube Music "song radio" for [videoId]: tracks of a similar genre
+  /// and mood, in the order YouTube Music would play them next. The seed track
+  /// itself is left out.
+  Future<List<Video>> getRadio(String videoId) async {
+    if (videoId.trim().isEmpty) return [];
+
+    final root = await _httpClient.sendPost('next', {
+      'context': _remixContext,
+      'videoId': videoId,
+      'playlistId': 'RDAMVM$videoId',
+      'isAudioOnly': true,
+    });
+
+    final tracks = <Video>[];
+    final seen = <String>{videoId};
+    for (final item in _findRenderers(root, 'playlistPanelVideoRenderer')) {
+      final id = item.getValue<String>('videoId');
+      final title = _runsText(item.getMap('title'));
+      if (id == null || title == null || !seen.add(id)) continue;
+
+      // The byline reads `Artist • Album • Year` or `Artist • 1M views`.
+      final bylineRuns =
+          item.getMap('longBylineText')?.getList('runs')?.whereType<Map>() ??
+          const <Map>[];
+      final artistRun = bylineRuns.firstOrNull?.cast<String, dynamic>();
+      final author = artistRun?['text']?.toString().trim() ?? '';
+      if (author.isEmpty) continue;
+      final channelId = artistRun
+          ?.getMap('navigationEndpoint')
+          ?.getMap('browseEndpoint')
+          ?.getValue<String>('browseId');
+
+      tracks.add(
+        Video(
+          VideoId(id),
+          title,
+          author,
+          ChannelId.fromString(
+            channelId != null && channelId.startsWith('UC')
+                ? channelId
+                : _unknownChannelId,
+          ),
+          null,
+          null,
+          null,
+          '',
+          _parseDuration(_runsText(item.getMap('lengthText'))),
+          ThumbnailSet(id),
+          null,
+          const Engagement(0, null, null),
+          false,
+        ),
+      );
+    }
+    return tracks;
+  }
+
   /// Splits a `Song • Artist • Album` style subtitle line on its bullet
   /// separators.
   List<String> _splitBullets(String? text) {

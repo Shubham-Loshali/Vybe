@@ -25,19 +25,9 @@ Widget buildPlaybackIconButton(
       VoidCallback? onPressed;
       String? semanticLabel;
 
-      if (processingState == AudioProcessingState.loading ||
-          processingState == AudioProcessingState.buffering) {
-        iconWidget = SizedBox(
-          width: iconSize,
-          height: iconSize,
-          child: CircularProgressIndicator(
-            strokeWidth: 2.5,
-            valueColor: AlwaysStoppedAnimation<Color>(iconColor),
-          ),
-        );
-        onPressed = null;
-        semanticLabel = context.l10n!.loading;
-      } else if (processingState == AudioProcessingState.completed) {
+      // While a song loads or buffers, the button already shows pause (the
+      // song is about to play) and stays tappable, like Spotify: no spinner.
+      if (processingState == AudioProcessingState.completed) {
         iconWidget = Icon(
           FluentIcons.arrow_counterclockwise_24_regular,
           color: iconColor,

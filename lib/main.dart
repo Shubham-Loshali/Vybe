@@ -20,6 +20,7 @@ import 'package:vybe/services/cloud_sync_service.dart';
 import 'package:vybe/services/collaborative_playlist_service.dart';
 import 'package:vybe/services/data_manager.dart';
 import 'package:vybe/services/followed_artists_service.dart';
+import 'package:vybe/services/home_feed_service.dart';
 import 'package:vybe/services/io_service.dart';
 import 'package:vybe/services/listen_together_service.dart';
 import 'package:vybe/services/listening_stats_service.dart';
@@ -275,13 +276,28 @@ class _VybeState extends State<Vybe> with WidgetsBindingObserver {
   }
 }
 
-void main() {
+/// Set once the animated opening with its sound has played.
+const _openingPlayedKey = 'openingPlayed';
+
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(const _VybeStartup());
+  // The opening plays only on the very first launch. Reading the flag here
+  // takes a few milliseconds, behind Android's own launch screen.
+  var firstLaunch = true;
+  try {
+    await Hive.initFlutter();
+    final settings = await Hive.openBox('settings');
+    firstLaunch = settings.get(_openingPlayedKey) != true;
+  } catch (e, stackTrace) {
+    logger.log('Could not read first launch', error: e, stackTrace: stackTrace);
+  }
+  runApp(_VybeStartup(firstLaunch: firstLaunch));
 }
 
 class _VybeStartup extends StatefulWidget {
-  const _VybeStartup();
+  const _VybeStartup({required this.firstLaunch});
+
+  final bool firstLaunch;
 
   @override
   State<_VybeStartup> createState() => _VybeStartupState();
@@ -304,15 +320,33 @@ class _VybeStartupState extends State<_VybeStartup> {
         PlatformDispatcher.instance.accessibilityFeatures.disableAnimations;
     try {
       await Future.wait<void>([
-        initialisation(),
-        if (!reduceMotion)
+        initialisation().then((_) => _preloadHome()),
+        // Only the first launch waits for the full animated opening.
+        if (widget.firstLaunch && !reduceMotion)
           binding.waitUntilFirstFrameRasterized.then(
             (_) => Future<void>.delayed(const Duration(milliseconds: 1900)),
           ),
       ], eagerError: true);
+      if (widget.firstLaunch) {
+        await Hive.box('settings').put(_openingPlayedKey, true);
+      }
     } catch (error, stackTrace) {
       logger.log('Vybe could not start', error: error, stackTrace: stackTrace);
       rethrow;
+    }
+  }
+
+  /// Starts loading Home while the splash is still up, so it opens ready. Home
+  /// asks for the same feed and reuses this request. A slow network never
+  /// holds the app back for long: Home keeps loading once it opens.
+  Future<void> _preloadHome() async {
+    if (offlineMode.value) return;
+    try {
+      await HomeFeedService.instance
+          .load(PlatformDispatcher.instance.locale.countryCode ?? 'IN')
+          .timeout(Duration(seconds: widget.firstLaunch ? 6 : 3));
+    } catch (e) {
+      logger.log('Home was not ready before opening', error: e);
     }
   }
 
@@ -333,7 +367,10 @@ class _VybeStartupState extends State<_VybeStartup> {
             key: const ValueKey('opening'),
             debugShowCheckedModeBanner: false,
             theme: ThemeData.dark(),
-            home: StartupSplash(failed: snapshot.hasError),
+            home: StartupSplash(
+              failed: snapshot.hasError,
+              quiet: !widget.firstLaunch,
+            ),
           );
         } else {
           content = const Vybe(key: ValueKey('ready'));
@@ -430,6 +467,8 @@ Future<void> initialisation() async {
         ),
       );
     }
+
+    if (isMobilePlatform) audioHandler.restoreLastPlayed();
 
     // Init router
     NavigationManager.instance;

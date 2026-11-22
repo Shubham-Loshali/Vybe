@@ -293,12 +293,12 @@ class _ForceUpdateBlockingScreen extends StatelessWidget {
                     width: 80,
                     height: 80,
                     decoration: BoxDecoration(
-                      color: const Color(0xFFE91E63).withValues(alpha: 0.15),
+                      color: const Color(0xFF1DB954).withValues(alpha: 0.15),
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(
                       FluentIcons.arrow_download_24_filled,
-                      color: Color(0xFFE91E63),
+                      color: Color(0xFF1DB954),
                       size: 40,
                     ),
                   ),

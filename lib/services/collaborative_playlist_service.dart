@@ -11,7 +11,11 @@ import 'package:vybe/services/cloud_sync_service.dart';
 import 'package:vybe/services/playlists_manager.dart';
 import 'package:vybe/utilities/playlist_utils.dart';
 
-typedef CollaborativeSongEdit = ({List<Map> songs, List<Map> added});
+typedef CollaborativeSongEdit = ({
+  List<Map> songs,
+  List<Map> added,
+  List<Map> removed,
+});
 
 class CollaborativePlaylistService {
   CollaborativePlaylistService._internal()
@@ -40,7 +44,15 @@ class CollaborativePlaylistService {
     CollaborativeSongEdit Function(List<Map>) edit,
   ) _editSongs;
   final _pendingConversions = <String>{};
-  final _pendingSongRemovals = <String, Future<void>>{};
+  final _pendingSongRemovals = <String, Future<bool>>{};
+
+  /// Shown when a signed-out user tries to create, join or edit a shared
+  /// playlist. The Firestore rules reject those writes without an account.
+  static const signInRequiredMessage =
+      'Sign in to create, join or edit shared playlists.';
+
+  /// Shared playlists can only be changed with a signed-in account.
+  bool get isSignedIn => CloudSyncService.instance.currentUser.value != null;
 
   final Future<void> Function(String code, Map<String, dynamic> change)
   _writeArtwork;
@@ -278,6 +290,10 @@ class CollaborativePlaylistService {
       );
     }
 
+    if (!isSignedIn) {
+      return (success: false, message: signInRequiredMessage, inviteCode: null);
+    }
+
     final inviteCode = _randomCode();
     final uid = _currentUid();
     final userName = _displayName();
@@ -382,6 +398,10 @@ class CollaborativePlaylistService {
         message: 'You are already in this playlist!',
         playlist: local,
       );
+    }
+
+    if (!isSignedIn) {
+      return (success: false, message: signInRequiredMessage, playlist: null);
     }
 
     try {
@@ -497,7 +517,7 @@ class CollaborativePlaylistService {
       if (!snapshot.exists) throw StateError('Shared playlist no longer exists');
       final songs = (snapshot.data()?['songs'] as List? ?? []).whereType<Map>();
       final result = edit(songs.toList());
-      if (result.added.isNotEmpty) {
+      if (result.added.isNotEmpty || result.removed.isNotEmpty) {
         transaction.update(playlist, {
           'songs': result.songs,
           'updatedAt': FieldValue.serverTimestamp(),
@@ -522,7 +542,7 @@ class CollaborativePlaylistService {
       (playlist?['collabId'] ?? playlist?['inviteCode'] ?? collabCodeOrId)
           .toString(),
     );
-    if (code.length != codeLength) return null;
+    if (code.length != codeLength || !isSignedIn) return null;
 
     final uid = _currentUid();
     final userName = _displayName();
@@ -584,10 +604,23 @@ class CollaborativePlaylistService {
     final updated = [...current];
     final index = indexToInsert?.clamp(0, updated.length) ?? updated.length;
     updated.insertAll(index, added);
-    return (songs: updated, added: added);
+    return (songs: updated, added: added, removed: const <Map>[]);
+  }
+
+  static CollaborativeSongEdit _withoutSong(List<Map> current, String songId) {
+    final removed = current.where((song) => _songId(song) == songId).toList();
+    return (
+      songs: current.where((song) => _songId(song) != songId).toList(),
+      added: const <Map>[],
+      removed: removed,
+    );
   }
 
   /// Removes a song from a collaborative playlist.
+  ///
+  /// The song is removed locally right away. If the shared copy cannot be
+  /// updated, it is put back locally and this returns false, so the local
+  /// list never drifts from what other members see.
   Future<bool> removeSong(
     String collabCodeOrId,
     String songYtid, {
@@ -596,12 +629,13 @@ class CollaborativePlaylistService {
     final playlist = _storedCollaborativePlaylist(collabCodeOrId);
     String? code;
     var songToRemove = removedLocally;
+    var songIndex = -1;
 
     if (playlist != null) {
       code = (playlist['collabId'] ?? playlist['inviteCode'])?.toString();
       final list = List<dynamic>.from(playlist['list'] as List? ?? []);
 
-      final songIndex = list.indexWhere(
+      songIndex = list.indexWhere(
         (s) =>
             s is Map &&
             (s['ytid'] ?? s['id'])?.toString() == songYtid,
@@ -619,40 +653,52 @@ class CollaborativePlaylistService {
     code ??= normaliseCode(collabCodeOrId);
     if (songToRemove == null) return false;
 
-    final removal = _removeFirestoreSong(code, songYtid, songToRemove);
+    final removal = _removeFirestoreSong(code, songYtid);
     _pendingSongRemovals[code] = removal;
+    final bool removed;
     try {
-      await removal;
+      removed = await removal;
     } finally {
       if (identical(_pendingSongRemovals[code], removal)) {
         unawaited(_pendingSongRemovals.remove(code));
       }
     }
-    return true;
+    if (!removed) {
+      _restoreLocalSong(
+        collabCodeOrId,
+        songToRemove,
+        songIndex == -1 ? null : songIndex,
+      );
+    }
+    return removed;
   }
 
-  Future<void> _removeFirestoreSong(
-    String code,
-    String songYtid,
-    Map songToRemove,
-  ) async {
+  /// Removes every copy of [songYtid] from the shared list in a transaction,
+  /// so a concurrent edit by another member cannot make the removal miss.
+  Future<bool> _removeFirestoreSong(String code, String songYtid) async {
     try {
       await _pendingSongRemovals[code];
-      final docRef = FirebaseFirestore.instance.collection(_collectionName).doc(code);
-      final docSnap = await docRef.get().timeout(const Duration(seconds: 4));
-      final remoteSongs = docSnap.data()?['songs'] as List? ?? const [];
-      final matchingSongs = remoteSongs.where((song) {
-        return song is Map &&
-            (song['ytid'] ?? song['id'])?.toString() == songYtid;
-      }).toList();
-      await docRef.update({
-        'songs': FieldValue.arrayRemove(
-          matchingSongs.isEmpty ? [songToRemove] : matchingSongs,
-        ),
-        'updatedAt': FieldValue.serverTimestamp(),
-      }).timeout(const Duration(seconds: 4));
-    } catch (e) {
-      logger.log('Collaborative removeSong remote sync failed', error: e);
+      if (!isSignedIn) throw StateError(signInRequiredMessage);
+      await _editSongs(code, (current) => _withoutSong(current, songYtid));
+      return true;
+    } catch (error, stackTrace) {
+      logger.log(
+        'Collaborative removeSong remote sync failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      return false;
+    }
+  }
+
+  void _restoreLocalSong(String collabCodeOrId, Map song, int? index) {
+    final stored = _storedCollaborativePlaylist(collabCodeOrId);
+    final id = (stored?['ytid'] ?? stored?['id'])?.toString();
+    if (stored == null || id == null) return;
+    final current = (stored['list'] as List? ?? []).whereType<Map>().toList();
+    final restored = _mergeSongs(current, [song], index);
+    if (restored.added.isNotEmpty) {
+      updateStoredCustomPlaylist(id, {'list': restored.songs});
     }
   }
 

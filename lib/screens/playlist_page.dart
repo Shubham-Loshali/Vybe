@@ -172,6 +172,8 @@ class _PlaylistPageState extends State<PlaylistPage> {
 
       if (_playlist != null && _playlist['list'] != null) {
         _adoptPlaylist(_playlist);
+        // Play and the first rows start instantly once these are ready.
+        prefetchSongStreamUrls(_originalPlaylistList, limit: 2);
       }
       _maybeLoadRecommendations();
     } catch (e, stackTrace) {

@@ -111,7 +111,10 @@ void main() {
       expect(await audio.getChildren(AudioService.recentRootId), hasLength(1));
 
       final stopping = audio.stop();
-      expect(audio.playbackState.value.processingState, AudioProcessingState.idle);
+      expect(
+        audio.playbackState.value.processingState,
+        AudioProcessingState.idle,
+      );
       expect(audio.playbackState.value.controls, isEmpty);
       expect(audio.playbackState.value.systemActions, isEmpty);
       await stopping;
@@ -130,42 +133,39 @@ void main() {
     },
   );
 
-  test(
-    'System media Stop cancels a track loading in the background',
-    () async {
-      final originalPlatform = JustAudioPlatform.instance;
-      final platform = _PlaybackPlatform();
-      JustAudioPlatform.instance = platform;
-      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
-      final audio = VybeAudioHandler();
-      final gate = platform.loadGate = Completer<void>();
-      addTearDown(() async {
-        if (!gate.isCompleted) gate.complete();
-        await audio.stop();
-        await audio.audioPlayer.dispose();
-        JustAudioPlatform.instance = originalPlatform;
-        debugDefaultTargetPlatformOverride = null;
-      });
-      const id = 'media-card-loading-track';
-      const url = 'https://example.com/media-card-loading-track.m4a';
-      await addOrUpdateData(
-        'cache',
-        'song_${id}_${audioQualitySetting.value}_url',
-        url,
-      );
-      final requested = platform.loading.first;
-      final loading = audio.playResumableSong({'ytid': id, 'title': 'Loading'});
-      expect(await requested, url);
+  test('System media Stop cancels a track loading in the background', () async {
+    final originalPlatform = JustAudioPlatform.instance;
+    final platform = _PlaybackPlatform();
+    JustAudioPlatform.instance = platform;
+    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+    final audio = VybeAudioHandler();
+    final gate = platform.loadGate = Completer<void>();
+    addTearDown(() async {
+      if (!gate.isCompleted) gate.complete();
+      await audio.stop();
+      await audio.audioPlayer.dispose();
+      JustAudioPlatform.instance = originalPlatform;
+      debugDefaultTargetPlatformOverride = null;
+    });
+    const id = 'media-card-loading-track';
+    const url = 'https://example.com/media-card-loading-track.m4a';
+    await addOrUpdateData(
+      'cache',
+      'song_${id}_${audioQualitySetting.value}_url',
+      url,
+    );
+    final requested = platform.loading.first;
+    final loading = audio.playResumableSong({'ytid': id, 'title': 'Loading'});
+    expect(await requested, url);
 
-      final stopping = audio.stop();
-      gate.complete();
-      await Future.wait([loading, stopping]);
-      expect(platform.audibleSource, isNull);
-      expect(audio.playbackState.value.playing, isFalse);
-      expect(audio.playbackState.value.controls, isEmpty);
-      expect(await audio.getChildren(AudioService.recentRootId), isEmpty);
-    },
-  );
+    final stopping = audio.stop();
+    gate.complete();
+    await Future.wait([loading, stopping]);
+    expect(platform.audibleSource, isNull);
+    expect(audio.playbackState.value.playing, isFalse);
+    expect(audio.playbackState.value.controls, isEmpty);
+    expect(await audio.getChildren(AudioService.recentRootId), isEmpty);
+  });
 
   test(
     'stream lookup overlaps the pause and shares an in-flight validation',
@@ -300,8 +300,10 @@ void main() {
       offlineMode.value = true;
       expect(audio.canSkipToNext, isFalse);
       offlineMode.value = false;
+      // The setting only covers songs that end by themselves: Next still
+      // plays a similar song when pressed, like Spotify.
       playNextSongAutomatically.value = false;
-      expect(audio.canSkipToNext, isFalse);
+      expect(audio.canSkipToNext, isTrue);
       playNextSongAutomatically.value = true;
       final secondStarted = platform.started.first;
       if (completes) {
@@ -321,6 +323,125 @@ void main() {
       expect(audio.queue.value, hasLength(2));
     });
   }
+
+  for (final (description, pressNext) in [
+    ('Next plays a similar song with Autoplay off', true),
+    ('a song ending by itself respects Autoplay off', false),
+  ]) {
+    test(description, () async {
+      final originalPlatform = JustAudioPlatform.instance;
+      final platform = _PlaybackPlatform();
+      JustAudioPlatform.instance = platform;
+      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+      final previousAutoplay = playNextSongAutomatically.value;
+      final previousRepeat = repeatNotifier.value;
+      playNextSongAutomatically.value = false;
+      repeatNotifier.value = AudioServiceRepeatMode.none;
+      final seed = {'ytid': 'manual-seed', 'title': 'Seed'};
+      final next = {'ytid': 'manual-next', 'title': 'Similar'};
+      final audio = VybeAudioHandler(
+        findSimilarSong: (id, {excludedYtIds = const {}}) =>
+            Future.value(id == seed['ytid'] ? next : null),
+      );
+      addTearDown(() async {
+        await audio.stop();
+        await audio.audioPlayer.dispose();
+        playNextSongAutomatically.value = previousAutoplay;
+        repeatNotifier.value = previousRepeat;
+        debugDefaultTargetPlatformOverride = null;
+        JustAudioPlatform.instance = originalPlatform;
+      });
+      for (final song in [seed, next]) {
+        final id = song['ytid'];
+        await addOrUpdateData(
+          'cache',
+          'song_${id}_${audioQualitySetting.value}_url',
+          'https://example.com/$id.m4a',
+        );
+      }
+      final firstStarted = platform.started.first;
+      await audio.playResumableSong(seed);
+      await firstStarted;
+      expect(audio.canSkipToNext, isTrue);
+
+      if (pressNext) {
+        final secondStarted = platform.started.first;
+        unawaited(audio.skipToNext());
+        expect(
+          await secondStarted.timeout(const Duration(seconds: 4)),
+          'https://example.com/manual-next.m4a',
+        );
+        expect(audio.mediaItem.value?.extras?['ytid'], 'manual-next');
+      } else {
+        platform.players.values.single.publish(
+          ProcessingStateMessage.completed,
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 300));
+        expect(audio.queue.value, hasLength(1));
+        expect(audio.mediaItem.value?.extras?['ytid'], 'manual-seed');
+      }
+    });
+  }
+
+  test(
+    'suggestions skip queued songs and play right after the current one',
+    () async {
+      final originalPlatform = JustAudioPlatform.instance;
+      final platform = _PlaybackPlatform();
+      JustAudioPlatform.instance = platform;
+      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+      final previousAutoplay = playNextSongAutomatically.value;
+      final previousRepeat = repeatNotifier.value;
+      playNextSongAutomatically.value = true;
+      repeatNotifier.value = AudioServiceRepeatMode.none;
+      final seed = {'ytid': 'radio-seed', 'title': 'Seed'};
+      final queued = {'ytid': 'radio-queued', 'title': 'Queued'};
+      final radio = [
+        {'ytid': 'radio-queued', 'title': 'Queued'},
+        {'ytid': 'radio-one', 'title': 'One'},
+        {'ytid': 'radio-two', 'title': 'Two'},
+      ];
+      final audio = VybeAudioHandler(
+        findSimilarSong: (id, {excludedYtIds = const {}}) => Future.value(),
+        findRadioSongs: (id) async => id == seed['ytid'] ? radio : [],
+      );
+      addTearDown(() async {
+        await audio.stop();
+        await audio.audioPlayer.dispose();
+        playNextSongAutomatically.value = previousAutoplay;
+        repeatNotifier.value = previousRepeat;
+        debugDefaultTargetPlatformOverride = null;
+        JustAudioPlatform.instance = originalPlatform;
+      });
+      for (final id in ['radio-seed', 'radio-queued', 'radio-one']) {
+        await addOrUpdateData(
+          'cache',
+          'song_${id}_${audioQualitySetting.value}_url',
+          'https://example.com/$id.m4a',
+        );
+      }
+      final firstStarted = platform.started.first;
+      await audio.playResumableSong(seed);
+      await firstStarted;
+      await audio.addToQueue(queued);
+
+      final suggestions = await audio.upcomingSuggestions();
+      expect(suggestions.map((s) => s['ytid']), ['radio-one', 'radio-two']);
+      expect(suggestions.first['radioSeed'], 'radio-seed');
+
+      final started = platform.started.first;
+      await audio.playSuggestion(suggestions.first);
+      expect(
+        await started.timeout(const Duration(seconds: 4)),
+        'https://example.com/radio-one.m4a',
+      );
+      expect(audio.queue.value.map((item) => item.extras?['ytid']), [
+        'radio-seed',
+        'radio-one',
+        'radio-queued',
+      ]);
+    },
+  );
 
   for (final downloaded in [false, true]) {
     final kind = downloaded ? 'downloaded' : 'collaborative';

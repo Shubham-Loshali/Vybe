@@ -5,6 +5,7 @@ import 'package:hive_ce/hive_ce.dart';
 import 'package:vybe/database/albums.db.dart';
 import 'package:vybe/database/playlists.db.dart';
 import 'package:vybe/extensions/l10n.dart';
+import 'package:vybe/localization/app_localizations.dart';
 import 'package:vybe/main.dart' show logger;
 import 'package:vybe/services/artist_service.dart';
 import 'package:vybe/services/collaborative_playlist_service.dart';
@@ -12,6 +13,7 @@ import 'package:vybe/services/data_manager.dart';
 import 'package:vybe/services/explore_service.dart';
 import 'package:vybe/services/playlist_download_service.dart';
 import 'package:vybe/services/proxy_manager.dart';
+import 'package:vybe/services/router_service.dart';
 import 'package:vybe/services/settings_manager.dart';
 import 'package:vybe/utilities/app_utils.dart';
 import 'package:vybe/utilities/flutter_toast.dart';
@@ -250,13 +252,16 @@ Future<String> addSongInCustomPlaylist(
       return l10n.error;
     }
     if (customPlaylist['isCollaborative'] == true) {
+      if (!CollaborativePlaylistService.instance.isSignedIn) {
+        return l10n.sharedPlaylistSignInRequired;
+      }
       final count = await _addSongsToSharedPlaylist(
         playlistId,
         [song],
         indexToInsert: indexToInsert,
       );
       return switch (count) {
-        null => _sharedPlaylistAddFailed,
+        null => l10n.sharedPlaylistAddFailed,
         0 => l10n.songAlreadyInPlaylist,
         _ => l10n.songAdded,
       };
@@ -331,12 +336,15 @@ Future<String> addSongsInCustomPlaylist(
 
   if (customPlaylist != null) {
     if (customPlaylist['isCollaborative'] == true) {
+      if (!CollaborativePlaylistService.instance.isSignedIn) {
+        return l10n.sharedPlaylistSignInRequired;
+      }
       final count = await _addSongsToSharedPlaylist(
         playlistId,
         songs.whereType<Map>(),
       );
       return switch (count) {
-        null => _sharedPlaylistAddFailed,
+        null => l10n.sharedPlaylistAddFailed,
         0 => l10n.songAlreadyInPlaylist,
         _ => l10n.addedSuccess,
       };
@@ -394,9 +402,6 @@ Future<String> addSongsInCustomPlaylist(
   }
 }
 
-const _sharedPlaylistAddFailed =
-    'Could not add to the shared playlist. Check your connection and try again.';
-
 Future<int?> _addSongsToSharedPlaylist(
   String playlistId,
   Iterable<Map> songs, {
@@ -414,6 +419,17 @@ Future<int?> _addSongsToSharedPlaylist(
   return count;
 }
 
+/// Shows a toast from code that has no [BuildContext] of its own.
+void _showGlobalToast(String Function(AppLocalizations l10n) message) {
+  try {
+    final context = NavigationManager().context;
+    final l10n = context.l10n;
+    if (l10n != null) showToast(context, message(l10n));
+  } catch (e) {
+    logger.log('Could not show playlist toast', error: e);
+  }
+}
+
 bool removeSongFromPlaylist(
   Map playlist,
   Map songToRemove, {
@@ -421,6 +437,11 @@ bool removeSongFromPlaylist(
 }) {
   try {
     if (playlist['list'] == null) return false;
+    if (playlist['isCollaborative'] == true &&
+        !CollaborativePlaylistService.instance.isSignedIn) {
+      _showGlobalToast((l10n) => l10n.sharedPlaylistSignInRequired);
+      return false;
+    }
 
     final playlistSongs = List<dynamic>.from(playlist['list']);
     final songYtid = (songToRemove['ytid'] ?? songToRemove['id'])?.toString();
@@ -444,11 +465,17 @@ bool removeSongFromPlaylist(
       final code = playlist['collabId'] ?? playlist['inviteCode'];
       if (code != null && songYtid != null) {
         unawaited(
-          CollaborativePlaylistService.instance.removeSong(
-            code.toString(),
-            songYtid,
-            removedLocally: songToRemove,
-          ),
+          CollaborativePlaylistService.instance
+              .removeSong(
+                code.toString(),
+                songYtid,
+                removedLocally: songToRemove,
+              )
+              .then((removed) {
+                if (!removed) {
+                  _showGlobalToast((l10n) => l10n.sharedPlaylistRemoveFailed);
+                }
+              }),
         );
       }
     }

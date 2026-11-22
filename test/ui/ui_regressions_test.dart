@@ -6,6 +6,7 @@ import 'package:fluentui_system_icons/fluentui_system_icons.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:vybe/constants/version.dart';
 import 'package:vybe/localization/app_localizations.dart';
 import 'package:vybe/screens/home_page.dart';
 import 'package:vybe/services/cloud_sync_service.dart';
@@ -71,6 +72,8 @@ void main() {
     final account = CloudSyncService.instance.currentUser;
     final previousAccount = account.value;
     account.value = TestAccountUser(uid: 'home-feed-test');
+    // This version's What's new sheet would otherwise cover the cards.
+    await Hive.box('settings').put('whatsNewSeenVersion', appVersion);
     wrappedEnabled.value = false;
     userRecentlyPlayed.value = [
       {

@@ -6,6 +6,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:vybe/services/audio_service.dart';
+import 'package:vybe/services/cloud_sync_service.dart';
 import 'package:vybe/services/collaborative_playlist_service.dart';
 import 'package:vybe/services/common_services.dart';
 import 'package:vybe/services/io_service.dart';
@@ -13,6 +14,8 @@ import 'package:vybe/services/playlists_manager.dart';
 import 'package:vybe/services/settings_manager.dart';
 import 'package:vybe/utilities/playlist_utils.dart';
 import 'package:vybe/utilities/sharing_intent.dart';
+
+import '../support/test_account_user.dart';
 
 class _SharedSongAudioHandler extends Fake implements VybeAudioHandler {
   List<Map>? queuedSongs;
@@ -44,6 +47,8 @@ void main() {
   late Directory tempDir;
 
   setUpAll(() async {
+    // Shared playlists can only be edited while signed in.
+    CloudSyncService.instance.currentUser.value = TestAccountUser();
     tempDir = await Directory.systemTemp.createTemp('vybe_playback_sync_test_');
     applicationDirPath = tempDir.path;
     await FilePaths.ensureDirectoriesExist();

@@ -397,8 +397,8 @@ void main() {
   });
 
   group('Queue Auto-Injection & Settings Guard', () {
-    test('playNextSongAutomatically defaults to false and persists cleanly', () {
-      expect(playNextSongAutomatically.value, isFalse);
+    test('playNextSongAutomatically defaults to true and persists cleanly', () {
+      expect(playNextSongAutomatically.value, isTrue);
     });
   });
 }

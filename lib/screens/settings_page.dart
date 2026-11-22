@@ -222,10 +222,7 @@ class SettingsPage extends StatelessWidget {
               borderRadius: commonCustomBarRadiusFirst,
               trailing: Switch(
                 value: value,
-                onChanged: (value) {
-                  _toggleAutoPlayNext(context, value);
-                  showToast(context, context.l10n!.settingChangedMsg);
-                },
+                onChanged: (value) => _toggleAutoPlayNext(context, value),
               ),
             );
           },

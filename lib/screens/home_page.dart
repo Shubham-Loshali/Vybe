@@ -31,6 +31,7 @@ import 'package:vybe/widgets/playlist_artwork.dart';
 import 'package:vybe/widgets/section_header.dart';
 import 'package:vybe/widgets/shelf_card.dart';
 import 'package:vybe/widgets/spotify_header.dart';
+import 'package:vybe/widgets/whats_new_sheet.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key, this.feedService});
@@ -79,6 +80,9 @@ class _HomePageState extends State<HomePage> {
       }
       if (CloudSyncService.instance.currentUser.value == null) {
         AuthDialog.show(context);
+      } else {
+        // Not on top of the sign-in dialog: it waits for a signed-in open.
+        unawaited(showWhatsNewIfUpdated(context));
       }
     });
   }

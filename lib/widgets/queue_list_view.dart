@@ -7,6 +7,9 @@ import 'package:fluentui_system_icons/fluentui_system_icons.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:vybe/extensions/l10n.dart';
 import 'package:vybe/main.dart';
+import 'package:vybe/services/data_manager.dart';
+import 'package:vybe/services/settings_manager.dart';
+import 'package:vybe/utilities/flutter_toast.dart';
 import 'package:vybe/widgets/confirmation_dialog.dart';
 import 'package:vybe/widgets/no_artwork_cube.dart';
 
@@ -298,6 +301,14 @@ class _QueueWidgetState extends State<QueueWidget> {
       scrollController: _scrollController,
       buildDefaultDragHandles: false,
       padding: const EdgeInsets.only(top: 4, bottom: 24, left: 8, right: 8),
+      footer: AutoplaySuggestions(
+        // Reload when the song changes or the queue grows or shrinks, since
+        // queued songs are left out of the suggestions.
+        key: ValueKey(
+          '${audioHandler.mediaItem.value?.id}_${_queue.length}',
+        ),
+        closeOnTap: closeOnTap,
+      ),
       itemCount: _queue.length,
       onReorderItem: (oldIndex, newIndex) {
         final movingId =
@@ -479,6 +490,244 @@ class QueueTile extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Songs similar to the current one that autoplay will play once the queue
+/// ends, shown under the queue with a switch to turn autoplay on or off.
+class AutoplaySuggestions extends StatefulWidget {
+  const AutoplaySuggestions({super.key, this.closeOnTap = false});
+
+  final bool closeOnTap;
+
+  @override
+  State<AutoplaySuggestions> createState() => _AutoplaySuggestionsState();
+}
+
+class _AutoplaySuggestionsState extends State<AutoplaySuggestions> {
+  Future<List<Map>>? _suggestions;
+
+  @override
+  void initState() {
+    super.initState();
+    playNextSongAutomatically.addListener(_reload);
+    offlineMode.addListener(_reload);
+    _suggestions = _load();
+  }
+
+  @override
+  void dispose() {
+    playNextSongAutomatically.removeListener(_reload);
+    offlineMode.removeListener(_reload);
+    super.dispose();
+  }
+
+  Future<List<Map>>? _load() =>
+      playNextSongAutomatically.value && !offlineMode.value
+      ? audioHandler.upcomingSuggestions()
+      : null;
+
+  void _reload() {
+    if (mounted) setState(() => _suggestions = _load());
+  }
+
+  void _setAutoplay(bool value) {
+    playNextSongAutomatically.value = value;
+    addOrUpdateData<bool>('settings', 'playNextSongAutomatically', value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (offlineMode.value || audioHandler.mediaItem.value == null) {
+      return const SizedBox.shrink();
+    }
+    final colorScheme = Theme.of(context).colorScheme;
+    final l10n = context.l10n!;
+    final enabled = playNextSongAutomatically.value;
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(left: 12, right: 4, bottom: 6),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        l10n.autoplaySimilarSongs,
+                        style: TextStyle(
+                          color: colorScheme.onSurface,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        enabled
+                            ? l10n.autoplaySimilarSongsHint
+                            : l10n.autoplayTurnOnHint,
+                        style: TextStyle(
+                          color: colorScheme.onSurfaceVariant,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Switch(value: enabled, onChanged: _setAutoplay),
+              ],
+            ),
+          ),
+          if (enabled)
+            FutureBuilder<List<Map>>(
+              future: _suggestions,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState != ConnectionState.done) {
+                  return Column(
+                    children: List.generate(
+                      3,
+                      (_) => _SuggestionPlaceholder(colorScheme: colorScheme),
+                    ),
+                  );
+                }
+                final songs = snapshot.data ?? const [];
+                return Column(
+                  children: [
+                    for (final song in songs)
+                      _SuggestionTile(
+                        song: song,
+                        colorScheme: colorScheme,
+                        onTap: () {
+                          audioHandler.playSuggestion(song);
+                          if (widget.closeOnTap) Navigator.pop(context);
+                        },
+                        onAdd: () {
+                          audioHandler.addToQueue(song);
+                          showToast(context, l10n.addedToQueue);
+                        },
+                      ),
+                  ],
+                );
+              },
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SuggestionTile extends StatelessWidget {
+  const _SuggestionTile({
+    required this.song,
+    required this.colorScheme,
+    required this.onTap,
+    required this.onAdd,
+  });
+
+  final Map song;
+  final ColorScheme colorScheme;
+  final VoidCallback onTap;
+  final VoidCallback onAdd;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: Padding(
+        padding: const EdgeInsets.only(left: 12, top: 8, bottom: 8),
+        child: Row(
+          children: [
+            _ArtworkThumbnail(
+              song: song,
+              size: QueueTile._artSize,
+              radius: QueueTile._artRadius,
+              colorScheme: colorScheme,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    song['title']?.toString() ?? '',
+                    style: TextStyle(
+                      color: colorScheme.onSurface.withValues(alpha: 0.85),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    song['artist']?.toString() ?? '',
+                    style: TextStyle(
+                      color: colorScheme.onSurfaceVariant,
+                      fontSize: 12,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            IconButton(
+              onPressed: onAdd,
+              tooltip: context.l10n!.addToQueue,
+              icon: Icon(
+                FluentIcons.add_circle_24_regular,
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SuggestionPlaceholder extends StatelessWidget {
+  const _SuggestionPlaceholder({required this.colorScheme});
+
+  final ColorScheme colorScheme;
+
+  @override
+  Widget build(BuildContext context) {
+    final fill = colorScheme.surfaceContainerHighest;
+    Widget bar(double width, double height) => Container(
+      width: width,
+      height: height,
+      decoration: BoxDecoration(
+        color: fill,
+        borderRadius: BorderRadius.circular(4),
+      ),
+    );
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: Row(
+        children: [
+          Container(
+            width: QueueTile._artSize,
+            height: QueueTile._artSize,
+            decoration: BoxDecoration(
+              color: fill,
+              borderRadius: BorderRadius.circular(QueueTile._artRadius),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [bar(150, 12), const SizedBox(height: 6), bar(90, 10)],
+          ),
+        ],
       ),
     );
   }

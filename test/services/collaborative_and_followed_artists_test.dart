@@ -26,6 +26,8 @@ void main() {
   late Directory tempDir;
 
   setUpAll(() async {
+    // Shared playlists can only be edited while signed in.
+    CloudSyncService.instance.currentUser.value = TestAccountUser();
     tempDir = await Directory.systemTemp.createTemp('vybe_collab_artists_test_');
     applicationDirPath = tempDir.path;
     await FilePaths.ensureDirectoriesExist();
@@ -479,6 +481,65 @@ void main() {
       expect(upgraded['isCollaborative'], isTrue);
       expect(upgraded['inviteCode'], res.inviteCode);
       expect(upgraded['collaborators'], isNotEmpty);
+    });
+
+    test('a failed shared removal puts the song back in place', () async {
+      var remoteSongs = <Map>[];
+      var rejectWrites = true;
+      final service = CollaborativePlaylistService.withPublisher(
+        (code, data) async => remoteSongs = List<Map>.from(data['songs']),
+        editSongs: (_, edit) async {
+          if (rejectWrites) throw StateError('Write rejected');
+          final result = edit(remoteSongs);
+          remoteSongs = result.songs;
+          return result;
+        },
+      );
+      final created = await service.createCollaborativePlaylist('Restore');
+      final id = created.playlistId!;
+      remoteSongs = [
+        {'ytid': 'first'},
+        {'ytid': 'second'},
+        {'ytid': 'third'},
+      ];
+      updateStoredCustomPlaylist(id, {'list': List<Map>.from(remoteSongs)});
+      List<String?> localIds() => (storedCustomPlaylists.singleWhere(
+        (p) => p['ytid'] == id,
+      )['list'] as List).map((s) => (s as Map)['ytid']?.toString()).toList();
+
+      expect(await service.removeSong(id, 'second'), isFalse);
+      expect(localIds(), ['first', 'second', 'third']);
+      expect(remoteSongs, hasLength(3));
+
+      rejectWrites = false;
+      expect(await service.removeSong(id, 'second'), isTrue);
+      expect(localIds(), ['first', 'third']);
+      expect(remoteSongs.map((s) => s['ytid']), ['first', 'third']);
+    });
+
+    test('signed-out users cannot share, join or edit shared playlists', () async {
+      final account = CloudSyncService.instance.currentUser;
+      final previous = account.value;
+      addTearDown(() => account.value = previous);
+      var writes = 0;
+      final service = CollaborativePlaylistService.withPublisher(
+        (_, __) async => writes++,
+        editSongs: (_, edit) async {
+          writes++;
+          return edit([]);
+        },
+      );
+      final created = await service.createCollaborativePlaylist('Signed in');
+      account.value = null;
+
+      final shared = await service.createCollaborativePlaylist('Signed out');
+      expect(shared.success, isFalse);
+      expect(shared.message, contains('Sign in'));
+      final joined = await service.joinCollaborativePlaylist('ABC234');
+      expect(joined.success, isFalse);
+      expect(joined.message, CollaborativePlaylistService.signInRequiredMessage);
+      expect(await service.addSongs(created.playlistId!, [{'ytid': 'x'}]), isNull);
+      expect(writes, 1);
     });
   });
 }

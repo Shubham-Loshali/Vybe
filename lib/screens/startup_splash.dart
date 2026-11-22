@@ -7,10 +7,15 @@ import 'package:just_audio/just_audio.dart';
 import 'package:material_ui/material_ui.dart';
 
 /// Draws the opening at the device's resolution while Vybe initializes.
+///
+/// The animated opening with its sound plays only on the first launch. After
+/// that, [quiet] shows the logo still and silent for the moment it takes to
+/// start.
 class StartupSplash extends StatefulWidget {
-  const StartupSplash({super.key, this.failed = false});
+  const StartupSplash({super.key, this.failed = false, this.quiet = false});
 
   final bool failed;
+  final bool quiet;
 
   @override
   State<StartupSplash> createState() => _StartupSplashState();
@@ -36,7 +41,9 @@ class _StartupSplashState extends State<StartupSplash>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && !widget.failed) unawaited(_playOpeningSound());
+      if (mounted && !widget.failed && !widget.quiet) {
+        unawaited(_playOpeningSound());
+      }
     });
   }
 
@@ -94,6 +101,11 @@ class _StartupSplashState extends State<StartupSplash>
     if (MediaQuery.disableAnimationsOf(context) || widget.failed) {
       _entrance.value = 1;
       _ambient.stop();
+    } else if (widget.quiet) {
+      // Later launches: the logo is there at once and its ring keeps turning,
+      // without the entrance or the sound.
+      _entrance.value = 1;
+      if (!_ambient.isAnimating) _ambient.repeat();
     } else {
       if (!_entrance.isAnimating && !_entrance.isCompleted) _entrance.forward();
       if (!_ambient.isAnimating) _ambient.repeat();
@@ -238,6 +250,10 @@ class _StartupSplashState extends State<StartupSplash>
                                       textAlign: TextAlign.center,
                                       style: TextStyle(color: Colors.white70),
                                     )
+                                  // The sound bars belong with the opening
+                                  // sound, so they show only when it plays.
+                                  else if (widget.quiet)
+                                    const SizedBox(height: 24)
                                   else
                                     Opacity(
                                       opacity: bars,
