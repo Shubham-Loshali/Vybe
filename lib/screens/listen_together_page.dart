@@ -5,6 +5,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:vybe/services/cloud_sync_service.dart';
 import 'package:vybe/services/listen_together_service.dart';
+import 'package:vybe/utilities/account_name.dart';
 import 'package:vybe/utilities/flutter_toast.dart';
 import 'package:vybe/widgets/mini_player_bottom_space.dart';
 
@@ -12,18 +13,25 @@ import 'package:vybe/widgets/mini_player_bottom_space.dart';
 Future<void> openListenTogetherPage(
   BuildContext context, {
   String? initialCode,
+  bool joinOnly = false,
 }) {
   return Navigator.of(context, rootNavigator: true).push(
     MaterialPageRoute<void>(
-      builder: (_) => ListenTogetherPage(initialCode: initialCode),
+      builder: (_) =>
+          ListenTogetherPage(initialCode: initialCode, joinOnly: joinOnly),
     ),
   );
 }
 
 class ListenTogetherPage extends StatefulWidget {
-  const ListenTogetherPage({super.key, this.initialCode});
+  const ListenTogetherPage({
+    super.key,
+    this.initialCode,
+    this.joinOnly = false,
+  });
 
   final String? initialCode;
+  final bool joinOnly;
 
   @override
   State<ListenTogetherPage> createState() => _ListenTogetherPageState();
@@ -120,7 +128,15 @@ class _ListenTogetherPageState extends State<ListenTogetherPage> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => ValueListenableBuilder<bool>(
+    valueListenable: _service.busy,
+    builder: (context, busy, _) => PopScope(
+      canPop: !widget.joinOnly || !busy,
+      child: _buildPage(busy),
+    ),
+  );
+
+  Widget _buildPage(bool busy) {
     return Scaffold(
       backgroundColor: const Color(0xFF121212),
       appBar: AppBar(
@@ -128,7 +144,9 @@ class _ListenTogetherPageState extends State<ListenTogetherPage> {
         elevation: 0,
         leading: IconButton(
           icon: const Icon(FluentIcons.dismiss_24_regular, color: Colors.white),
-          onPressed: () => Navigator.pop(context),
+          onPressed: widget.joinOnly && busy
+              ? null
+              : () => Navigator.pop(context),
         ),
         title: const Text(
           'Jam',
@@ -146,22 +164,22 @@ class _ListenTogetherPageState extends State<ListenTogetherPage> {
           return ValueListenableBuilder<ListenTogetherSession?>(
             valueListenable: _service.session,
             builder: (context, session, _) {
-              return ValueListenableBuilder<bool>(
-                valueListenable: _service.busy,
-                builder: (context, busy, _) {
-                  final Widget content;
-                  if (session != null) {
-                    content = _buildSession(context, session);
-                  } else if (user == null) {
-                    content = _buildSignIn(context);
-                  } else {
-                    content = _buildStartOrJoin(context, busy);
-                  }
-                  return ListView(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    children: [content, const MiniPlayerBottomSpace()],
-                  );
-                },
+              final Widget content;
+              if (session != null) {
+                content = _buildSession(context, session);
+              } else if (user == null) {
+                content = _buildSignIn(context);
+              } else {
+                content = widget.joinOnly
+                    ? _buildJoinForm(busy)
+                    : _buildStartOrJoin(busy, accountDisplayName(user));
+              }
+              return ListView(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
+                children: [content, const MiniPlayerBottomSpace()],
               );
             },
           );
@@ -240,7 +258,7 @@ class _ListenTogetherPageState extends State<ListenTogetherPage> {
     );
   }
 
-  Widget _buildStartOrJoin(BuildContext context, bool busy) {
+  Widget _buildStartOrJoin(bool busy, String? displayName) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -275,9 +293,9 @@ class _ListenTogetherPageState extends State<ListenTogetherPage> {
                       shape: BoxShape.circle,
                     ),
                     alignment: Alignment.center,
-                    child: const Text(
-                      'S',
-                      style: TextStyle(
+                    child: Text(
+                      _initial(displayName),
+                      style: const TextStyle(
                         color: Color(0xFF4C0838),
                         fontWeight: FontWeight.w800,
                         fontSize: 20,
@@ -344,89 +362,7 @@ class _ListenTogetherPageState extends State<ListenTogetherPage> {
         ),
         const SizedBox(height: 24),
 
-        // Join section
-        Container(
-          padding: const EdgeInsets.all(18),
-          decoration: BoxDecoration(
-            color: const Color(0xFF242424),
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Text(
-                'Join a Jam',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: 4),
-              const Text(
-                'Enter the 6-character code your friend shared.',
-                style: TextStyle(color: Colors.white60, fontSize: 13),
-              ),
-              const SizedBox(height: 14),
-              TextField(
-                controller: _codeController,
-                enabled: !busy,
-                textCapitalization: TextCapitalization.characters,
-                textAlign: TextAlign.center,
-                maxLength: ListenTogetherService.codeLength,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 20,
-                  letterSpacing: 6,
-                  fontWeight: FontWeight.bold,
-                ),
-                inputFormatters: [
-                  FilteringTextInputFormatter.allow(RegExp('[a-zA-Z0-9]')),
-                  TextInputFormatter.withFunction(
-                    (oldValue, newValue) =>
-                        newValue.copyWith(text: newValue.text.toUpperCase()),
-                  ),
-                ],
-                decoration: InputDecoration(
-                  hintText: 'CODE',
-                  hintStyle: const TextStyle(
-                    color: Colors.white30,
-                    letterSpacing: 6,
-                  ),
-                  counterText: '',
-                  filled: true,
-                  fillColor: const Color(0xFF1E1E1E),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: BorderSide.none,
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(vertical: 12),
-                ),
-                onSubmitted: busy ? null : (_) => _join(),
-              ),
-              const SizedBox(height: 12),
-              OutlinedButton.icon(
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: Colors.white,
-                  side: const BorderSide(color: Colors.white24),
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                ),
-                onPressed: busy ? null : _join,
-                icon: const Icon(
-                  FluentIcons.person_arrow_right_24_regular,
-                  size: 18,
-                ),
-                label: const Text(
-                  'Join with code',
-                  style: TextStyle(fontWeight: FontWeight.w600),
-                ),
-              ),
-            ],
-          ),
-        ),
+        _buildJoinForm(busy),
         if (busy) ...[
           const SizedBox(height: 24),
           const Center(
@@ -445,11 +381,87 @@ class _ListenTogetherPageState extends State<ListenTogetherPage> {
     );
   }
 
+  Widget _buildJoinForm(bool busy) => Container(
+    padding: const EdgeInsets.all(18),
+    decoration: BoxDecoration(
+      color: const Color(0xFF242424),
+      borderRadius: BorderRadius.circular(16),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Text(
+          'Join a Jam',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 16,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 4),
+        const Text(
+          'Enter the 6-character code or paste the Jam invite link.',
+          style: TextStyle(color: Colors.white60, fontSize: 13),
+        ),
+        const SizedBox(height: 14),
+        TextField(
+          controller: _codeController,
+          enabled: !busy,
+          textCapitalization: TextCapitalization.characters,
+          textAlign: TextAlign.center,
+          autocorrect: false,
+          enableSuggestions: false,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 20,
+            letterSpacing: 1,
+            fontWeight: FontWeight.bold,
+          ),
+          decoration: InputDecoration(
+            hintText: 'Code or invite link',
+            hintStyle: const TextStyle(color: Colors.white30, letterSpacing: 1),
+            counterText: '',
+            filled: true,
+            fillColor: const Color(0xFF1E1E1E),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+              borderSide: BorderSide.none,
+            ),
+            contentPadding: const EdgeInsets.symmetric(vertical: 12),
+          ),
+          onSubmitted: busy ? null : (_) => _join(),
+        ),
+        const SizedBox(height: 12),
+        OutlinedButton.icon(
+          style: OutlinedButton.styleFrom(
+            foregroundColor: Colors.white,
+            side: const BorderSide(color: Colors.white24),
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+          ),
+          onPressed: busy ? null : _join,
+          icon: const Icon(FluentIcons.person_arrow_right_24_regular, size: 18),
+          label: Text(
+            widget.joinOnly && busy ? 'Joining…' : 'Join Jam',
+            style: const TextStyle(fontWeight: FontWeight.w600),
+          ),
+        ),
+      ],
+    ),
+  );
+
+  String _initial(String? name) {
+    final displayName = name?.trim() ?? '';
+    return displayName.isEmpty
+        ? '?'
+        : displayName.characters.first.toUpperCase();
+  }
+
   Widget _buildSession(BuildContext context, ListenTogetherSession session) {
     final guests = session.guests;
-    final hostInitial = session.hostName.isNotEmpty
-        ? session.hostName.characters.first.toUpperCase()
-        : 'S';
+    final hostInitial = _initial(session.hostName);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -506,7 +518,7 @@ class _ListenTogetherPageState extends State<ListenTogetherPage> {
                       ),
                       alignment: Alignment.center,
                       child: Text(
-                        guest.isNotEmpty ? guest.characters.first.toUpperCase() : 'G',
+                        _initial(guest),
                         style: const TextStyle(
                           color: Colors.white,
                           fontWeight: FontWeight.w700,
@@ -767,7 +779,7 @@ class _ListenTogetherPageState extends State<ListenTogetherPage> {
                   ),
                   alignment: Alignment.center,
                   child: Text(
-                    guest.isNotEmpty ? guest.characters.first.toUpperCase() : 'G',
+                    _initial(guest),
                     style: const TextStyle(
                       color: Colors.white,
                       fontWeight: FontWeight.w700,

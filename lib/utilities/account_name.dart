@@ -1,5 +1,12 @@
 import 'package:firebase_auth/firebase_auth.dart';
 
+String? accountDisplayName(User? user) {
+  final name = user?.displayName?.trim() ?? '';
+  if (name.isNotEmpty) return name;
+  final emailName = user?.email?.split('@').first.trim() ?? '';
+  return emailName.isEmpty ? null : emailName;
+}
+
 /// Derive the greeting from the active account, never a device-wide setting.
 String accountFirstName(User? user) {
   if (user == null || user.isAnonymous || !user.emailVerified) return '';

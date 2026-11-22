@@ -10,12 +10,16 @@ import 'package:hive_ce/hive.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:vybe/localization/app_localizations.dart';
 import 'package:vybe/screens/library_page.dart';
+import 'package:vybe/screens/listen_together_page.dart';
 import 'package:vybe/screens/playlist_page.dart';
+import 'package:vybe/services/cloud_sync_service.dart';
+import 'package:vybe/services/listen_together_service.dart';
 import 'package:vybe/services/playlists_manager.dart';
 import 'package:vybe/theme/app_themes.dart';
 import 'package:vybe/utilities/collaborative_playlist_dialogs.dart';
 import 'package:vybe/widgets/overflow_menu_button.dart';
 
+import '../support/test_account_user.dart';
 import '../support/ui_fixture.dart';
 
 void main() {
@@ -35,7 +39,7 @@ void main() {
   });
 
   testWidgets(
-    'Library and playlist collaboration controls open their dialogs',
+    'Library and playlist controls open the correct Jam and collaboration screens',
     (tester) async {
       tester.view.devicePixelRatio = 1;
       tester.view.physicalSize = const Size(400, 880);
@@ -101,6 +105,41 @@ void main() {
       expect(find.text('ABC123'), findsOneWidget);
       await tester.tap(find.text('Done'));
       await tester.pumpAndSettle();
+
+      final account = CloudSyncService.instance.currentUser;
+      final previousAccount = account.value;
+      account.value = TestAccountUser(uid: 'library-jam-guest');
+      addTearDown(() => account.value = previousAccount);
+      audio.selectedSongs.clear();
+
+      await tester.tap(find.byIcon(FluentIcons.add_24_regular));
+      await tester.pumpAndSettle();
+      expect(find.text('Join Collaborative Playlist'), findsOneWidget);
+      await tester.tap(find.text('Join Jam'));
+      await tester.pumpAndSettle();
+      expect(find.byType(ListenTogetherPage), findsOneWidget);
+      expect(find.text('Start a Jam'), findsNothing);
+      await tester.enterText(find.byType(TextField), 'vybe://listen/ABC123');
+      expect(find.text('vybe://listen/ABC123'), findsOneWidget);
+      expect(audio.selectedSongs, isEmpty);
+      final busy = ListenTogetherService.instance.busy;
+      final previousBusy = busy.value;
+      addTearDown(() => busy.value = previousBusy);
+      busy.value = true;
+      await tester.pumpAndSettle();
+      expect(find.text('Joining…'), findsOneWidget);
+      expect(tester.widget<TextField>(find.byType(TextField)).enabled, isFalse);
+      final close = find.widgetWithIcon(IconButton, FluentIcons.dismiss_24_regular);
+      expect(tester.widget<IconButton>(close).onPressed, isNull);
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(find.byType(ListenTogetherPage), findsOneWidget);
+      busy.value = false;
+      await tester.pumpAndSettle();
+      await tester.tap(close);
+      await tester.pumpAndSettle();
+      expect(find.byType(ListenTogetherPage), findsNothing);
+      expect(find.text('Join Jam'), findsNothing);
 
       await tester.tap(find.byIcon(FluentIcons.add_24_regular));
       await tester.pumpAndSettle();

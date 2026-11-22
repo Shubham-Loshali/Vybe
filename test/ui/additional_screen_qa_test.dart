@@ -109,14 +109,16 @@ void main() {
   ) async {
     final currentUser = CloudSyncService.instance.currentUser;
     final previous = currentUser.value;
-    currentUser.value = TestAccountUser(uid: 'qa-jam');
+    currentUser.value = TestAccountUser(uid: 'qa-jam', displayName: 'Deepak');
     addTearDown(() => currentUser.value = previous);
     await tester.pumpWidget(
       uiApp(const ListenTogetherPage(initialCode: 'abc123')),
     );
     await tester.pumpAndSettle();
     final code = find.byType(TextField);
-    final join = find.text('Join with code');
+    expect(find.text('D'), findsOneWidget);
+    expect(find.text('S'), findsNothing);
+    final join = find.text('Join Jam');
     await tester.ensureVisible(join);
     await tester.pumpAndSettle();
     expect(tester.widget<TextField>(code).controller?.text, 'ABC123');

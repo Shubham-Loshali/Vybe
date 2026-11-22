@@ -112,6 +112,14 @@ void main() {
     test('normaliseCode cleans whitespace and converts to uppercase', () {
       expect(ListenTogetherService.normaliseCode('  k7qm2p  '), 'K7QM2P');
       expect(ListenTogetherService.normaliseCode('abc-def'), 'ABCDEF');
+      expect(
+        ListenTogetherService.normaliseCode(' vybe://listen/abc123 '),
+        'ABC123',
+      );
+      expect(
+        ListenTogetherService.normaliseCode('https://example.org/ABC123'),
+        isEmpty,
+      );
       expect(ListenTogetherService.normaliseCode('12 34 56'), '123456');
       expect(ListenTogetherService.normaliseCode('!@#k\$%7^&*q(m)2_p'), 'K7QM2P');
     });
@@ -125,6 +133,24 @@ void main() {
       expect(extracted, code);
 
       expect(ListenTogetherService.codeFromLink(Uri.parse('https://other.com/')), isNull);
+    });
+
+    test('pasted and tapped Jam links reject the same malformed invites', () {
+      for (final link in [
+        'vybe://listen/',
+        'vybe://listen/ABC12',
+        'vybe://listen/ABC123/extra',
+        'vybe://listen/ABC%2F123',
+        'vybe://account@listen/ABC123',
+        'vybe://listen:1234/ABC123',
+        'https://listen/ABC123',
+      ]) {
+        expect(ListenTogetherService.codeFromLink(Uri.parse(link)), isNull);
+        expect(ListenTogetherService.normaliseCode(link), isEmpty);
+      }
+      final validLink = Uri.parse('vybe://listen/abc123');
+      expect(ListenTogetherService.codeFromLink(validLink), 'ABC123');
+      expect(ListenTogetherService.normaliseCode(validLink.toString()), 'ABC123');
     });
 
     test('ListenTogetherSession copyWith and isHost checks', () {

@@ -188,7 +188,7 @@ class _HomePageState extends State<HomePage> {
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
             child: Align(
-              alignment: Alignment.centerLeft,
+              alignment: AlignmentDirectional.centerStart,
               child: FilterPills(
                 labels: ['All', context.l10n!.playlists, context.l10n!.songs],
                 selected: _filter,

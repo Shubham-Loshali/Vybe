@@ -8,6 +8,7 @@ import 'package:just_audio/just_audio.dart' show ProcessingState;
 import 'package:vybe/main.dart' show audioHandler, logger;
 import 'package:vybe/services/cloud_sync_service.dart';
 import 'package:vybe/services/settings_manager.dart' show offlineMode;
+import 'package:vybe/utilities/account_name.dart';
 import 'package:vybe/utilities/platform_utils.dart';
 
 /// Listen Together: one host shares what they play, guests hear the same
@@ -280,19 +281,32 @@ class ListenTogetherService {
   /// Leaves the session (ends it for everyone when called by the host).
   Future<void> leaveSession() => _leave(reason: null, notifyRemote: true);
 
-  static String normaliseCode(String raw) =>
+  static String normaliseCode(String raw) {
+    final input = raw.trim();
+    if (input.contains('://')) {
+      final uri = Uri.tryParse(input);
+      return uri == null ? '' : codeFromLink(uri) ?? '';
+    }
+    return _normaliseToken(input);
+  }
+
+  static String _normaliseToken(String raw) =>
       raw.toUpperCase().replaceAll(RegExp('[^A-Z0-9]'), '');
 
   static String inviteLink(String code) => 'vybe://listen/$code';
 
   static String? codeFromLink(Uri uri) {
-    if (uri.scheme == 'vybe' && uri.host == 'listen') {
-      final segments = uri.pathSegments;
-      if (segments.isNotEmpty && segments.first.isNotEmpty) {
-        return normaliseCode(segments.first);
-      }
+    if (uri.scheme != 'vybe' ||
+        uri.host != 'listen' ||
+        uri.userInfo.isNotEmpty ||
+        uri.hasPort ||
+        uri.pathSegments.length != 1) {
+      return null;
     }
-    return null;
+    final code = uri.pathSegments.single.toUpperCase();
+    return code.length == codeLength && code == _normaliseToken(code)
+        ? code
+        : null;
   }
 
   // ---------------------------------------------------------------------------
@@ -854,14 +868,9 @@ class ListenTogetherService {
     DateTime.now().millisecondsSinceEpoch + _documentTtl.inMilliseconds,
   );
 
-  String _displayName() {
-    final user = CloudSyncService.instance.currentUser.value;
-    final name = user?.displayName?.trim();
-    if (name != null && name.isNotEmpty) return name;
-    final email = user?.email;
-    if (email != null && email.contains('@')) return email.split('@').first;
-    return 'Vybe listener';
-  }
+  String _displayName() =>
+      accountDisplayName(CloudSyncService.instance.currentUser.value) ??
+      'Vybe listener';
 
   String _friendlyError(Object error) {
     if (error is TimeoutException) {

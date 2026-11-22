@@ -21,6 +21,7 @@ import 'package:vybe/services/collaborative_playlist_service.dart';
 import 'package:vybe/services/data_manager.dart';
 import 'package:vybe/services/followed_artists_service.dart';
 import 'package:vybe/services/io_service.dart';
+import 'package:vybe/services/listen_together_service.dart';
 import 'package:vybe/services/listening_stats_service.dart';
 import 'package:vybe/services/local_sync_service.dart';
 import 'package:vybe/services/logger_service.dart';
@@ -497,16 +498,14 @@ void handleIncomingLink(Uri? uri) async {
     return;
   }
 
-  if (uri != null &&
-      uri.scheme == 'vybe' &&
-      uri.host == 'listen' &&
-      uri.pathSegments.isNotEmpty) {
+  final jamCode = uri == null ? null : ListenTogetherService.codeFromLink(uri);
+  if (jamCode != null) {
     // On a cold start the link arrives before the UI exists: wait for it.
     for (var attempt = 0; attempt < 20; attempt++) {
       try {
         await openListenTogetherPage(
           NavigationManager().context,
-          initialCode: uri.pathSegments.first,
+          initialCode: jamCode,
         );
         return;
       } on StateError {

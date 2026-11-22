@@ -5,6 +5,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:vybe/constants/app_constants.dart';
 import 'package:vybe/extensions/l10n.dart';
 import 'package:vybe/main.dart' show logger;
+import 'package:vybe/screens/listen_together_page.dart';
 import 'package:vybe/services/common_services.dart';
 import 'package:vybe/services/followed_artists_service.dart';
 import 'package:vybe/services/playlist_download_service.dart';
@@ -690,45 +691,58 @@ class _LibraryPageState extends State<LibraryPage> {
       ),
       builder: (sheetContext) {
         return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                margin: const EdgeInsets.only(top: 8, bottom: 8),
-                width: 36,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: colorScheme.outlineVariant,
-                  borderRadius: BorderRadius.circular(2),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  margin: const EdgeInsets.only(top: 8, bottom: 8),
+                  width: 36,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: colorScheme.outlineVariant,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
                 ),
-              ),
-              ListTile(
-                leading: const Icon(FluentIcons.music_note_2_24_regular),
-                title: Text(this.context.l10n!.addPlaylist),
-                subtitle: const Text(
-                  'Create a new playlist or import from YouTube',
+                ListTile(
+                  leading: const Icon(FluentIcons.music_note_2_24_regular),
+                  title: Text(this.context.l10n!.addPlaylist),
+                  subtitle: const Text(
+                    'Create a new playlist or import from YouTube',
+                  ),
+                  onTap: () => Navigator.of(sheetContext).pop('add_playlist'),
                 ),
-                onTap: () => Navigator.of(sheetContext).pop('add_playlist'),
-              ),
-              ListTile(
-                leading: const Icon(
-                  FluentIcons.people_team_24_regular,
-                  color: Color(0xFF1DB954),
+                ListTile(
+                  leading: const Icon(
+                    FluentIcons.people_team_24_regular,
+                    color: Color(0xFF1DB954),
+                  ),
+                  title: const Text('Join Collaborative Playlist'),
+                  subtitle: const Text(
+                    'Enter invite code or link to collaborate with friends',
+                  ),
+                  onTap: () => Navigator.of(sheetContext).pop('join_collab'),
                 ),
-                title: const Text('Join Collaborative Playlist'),
-                subtitle: const Text(
-                  'Enter invite code or link to collaborate with friends',
+                ListTile(
+                  leading: Icon(
+                    FluentIcons.person_arrow_right_24_regular,
+                    color: colorScheme.primary,
+                  ),
+                  title: const Text('Join Jam'),
+                  subtitle: const Text(
+                    'Listen with friends using a code or invite link',
+                  ),
+                  onTap: () => Navigator.of(sheetContext).pop('join_jam'),
                 ),
-                onTap: () => Navigator.of(sheetContext).pop('join_collab'),
-              ),
-              ListTile(
-                leading: const Icon(FluentIcons.folder_add_24_regular),
-                title: Text(this.context.l10n!.createFolder),
-                subtitle: const Text('Organize your playlists into folders'),
-                onTap: () => Navigator.of(sheetContext).pop('create_folder'),
-              ),
-              const SizedBox(height: 8),
-            ],
+                ListTile(
+                  leading: const Icon(FluentIcons.folder_add_24_regular),
+                  title: Text(this.context.l10n!.createFolder),
+                  subtitle: const Text('Organize your playlists into folders'),
+                  onTap: () => Navigator.of(sheetContext).pop('create_folder'),
+                ),
+                const SizedBox(height: 8),
+              ],
+            ),
           ),
         );
       },
@@ -742,6 +756,9 @@ class _LibraryPageState extends State<LibraryPage> {
         break;
       case 'join_collab':
         await showJoinCollaborativePlaylistDialog(context);
+        break;
+      case 'join_jam':
+        await openListenTogetherPage(context, joinOnly: true);
         break;
       case 'create_folder':
         _showCreateFolderDialog();

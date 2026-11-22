@@ -6,6 +6,7 @@ import 'package:vybe/main.dart' show audioHandler;
 import 'package:vybe/screens/listen_together_page.dart';
 import 'package:vybe/services/cloud_sync_service.dart';
 import 'package:vybe/services/listen_together_service.dart';
+import 'package:vybe/utilities/account_name.dart';
 
 /// Opens Spotify-styled "Connect" bottom sheet matching the Spotify UX.
 Future<void> showSpotifyConnectSheet(BuildContext context) {
@@ -35,10 +36,8 @@ class _SpotifyConnectSheetState extends State<SpotifyConnectSheet> {
     final trackLabel = artist.isNotEmpty ? '$title - $artist' : title;
 
     final user = CloudSyncService.instance.currentUser.value;
-    final userName =
-        (user?.displayName ?? user?.email?.split('@').first ?? 'You').trim();
-    final userInitial =
-        userName.isNotEmpty ? userName.characters.first.toUpperCase() : 'S';
+    final userName = accountDisplayName(user) ?? 'You';
+    final userInitial = userName.characters.first.toUpperCase();
 
     return Container(
       decoration: const BoxDecoration(

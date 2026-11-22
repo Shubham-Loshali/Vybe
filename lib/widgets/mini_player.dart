@@ -431,7 +431,7 @@ class _SpotifyJamPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final host = session.hostName.trim();
-    final initial = host.isNotEmpty ? host.characters.first.toUpperCase() : 'S';
+    final initial = host.isNotEmpty ? host.characters.first.toUpperCase() : '?';
 
     return GestureDetector(
       onTap: () => openListenTogetherPage(context),
