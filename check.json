@@ -1,10 +1,17 @@
 {
-  "version": "10.6.5",
-  "minimum_version": "10.6.5",
-  "blocked_versions": ["10.6.0", "10.6.1", "10.6.2", "10.6.3", "10.6.4"],
+  "version": "10.6.6",
+  "minimum_version": "10.6.6",
+  "blocked_versions": [
+    "10.6.0",
+    "10.6.1",
+    "10.6.2",
+    "10.6.3",
+    "10.6.4",
+    "10.6.5"
+  ],
   "force_shutdown": false,
-  "url": "https://github.com/Shubham-Loshali/Vybe/releases/download/v10.6.5/Vybe.apk",
-  "arm64url": "https://github.com/Shubham-Loshali/Vybe/releases/download/v10.6.5/Vybe.apk",
-  "companion_url": "https://github.com/Shubham-Loshali/Vybe/releases/download/v10.6.5/Vybe.apk",
-  "announcementurl": "https://github.com/Shubham-Loshali/Vybe/releases/tag/v10.6.5"
+  "url": "https://github.com/Shubham-Loshali/Vybe/releases/download/v10.6.6/Vybe.apk",
+  "arm64url": "https://github.com/Shubham-Loshali/Vybe/releases/download/v10.6.6/Vybe.apk",
+  "companion_url": "https://github.com/Shubham-Loshali/Vybe/releases/download/v10.6.6/Vybe-companion.apk",
+  "announcementurl": "https://github.com/Shubham-Loshali/Vybe/releases/tag/v10.6.6"
 }
