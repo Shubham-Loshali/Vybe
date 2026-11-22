@@ -5,7 +5,7 @@ repository: https://github.com/Shubham-Loshali/Vybe
 issue_tracker: https://github.com/Shubham-Loshali/Vybe/issues
 
 publish_to: 'none'
-version: 10.6.6+217
+version: 10.6.8+218
 
 environment:
   sdk: '>=3.13.0 <4.0.0'
