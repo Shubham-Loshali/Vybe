@@ -14,6 +14,6 @@
   "force_shutdown": false,
   "url": "https://github.com/Shubham-Loshali/Vybe/releases/download/v10.6.8/Vybe.apk",
   "arm64url": "https://github.com/Shubham-Loshali/Vybe/releases/download/v10.6.8/Vybe.apk",
-  "companion_url": "https://github.com/Shubham-Loshali/Vybe/releases/download/v10.6.8/Vybe-companion.apk",
+  "companion_url": "https://vybe.shubham-loshali18.workers.dev/download/v10.6.8/companion/Vybe.apk",
   "announcementurl": "https://github.com/Shubham-Loshali/Vybe/releases/tag/v10.6.8"
 }

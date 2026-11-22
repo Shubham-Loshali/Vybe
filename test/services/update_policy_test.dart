@@ -44,7 +44,9 @@ void main() {
       }
       expect(policy['url'], endsWith('/Vybe.apk'));
       expect(policy['arm64url'], policy['url']);
-      expect(policy['companion_url'], endsWith('/Vybe-companion.apk'));
+      expect(policy['companion_url'], endsWith('/companion/Vybe.apk'));
+      expect(Uri.parse(policy['companion_url'] as String).host,
+          'vybe.shubham-loshali18.workers.dev');
     },
   );
 }
